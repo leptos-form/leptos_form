@@ -1,0 +1,9 @@
+[package]
+name = "leptos-form"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+leptos-form-core.path = "../core"
+leptos-form-proc-macros.path = "../proc-macros"

@@ -1,0 +1,8 @@
+[package]
+name = "leptos-form-proc-macros-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+

@@ -1,0 +1,8 @@
+[package]
+name = "leptos-form-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+
