@@ -5,5 +5,10 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+leptos.workspace = true
 leptos-form-core.path = "../core"
 leptos-form-proc-macros.path = "../proc-macros"
+
+[features]
+chrono = ["leptos-form-core/chrono"]
+uuid = ["leptos-form-core/uuid"]

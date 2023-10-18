@@ -1,8 +1,13 @@
 [package]
 name = "leptos-form-proc-macros"
 version.workspace = true
-edition.workspace = true
 authors.workspace = true
+edition.workspace = true
 
 [dependencies]
-core = { package = "leptos-form-proc-macros-core", path = "./core" }
+leptos-form-proc-macros-core.path = "./core"
+proc-macro2.workspace = true
+syn.workspace = true
+
+[lib]
+proc-macro = true

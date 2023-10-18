@@ -8,3 +8,19 @@ edition = "2021"
 authors = ["Trey Lowerison <19714082+tlowerison@users.noreply.github.com>"]
 
 [workspace.dependencies]
+cfg-if = "1"
+chrono = { version = "0", features = ["std"] }
+convert_case = "~0.6"
+derive_more = "~0.99"
+inner = "0"
+itertools = "~0.11"
+leptos = "~0.5"
+num-traits = "~0.2"
+paste = "~1"
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["fold", "full", "parsing"] }
+thiserror = "1"
+typed-builder = "0.17.0"
+uuid = "1"
+web-sys = "~0.3"
