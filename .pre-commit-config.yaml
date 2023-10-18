@@ -74,3 +74,12 @@ repos:
         types: [rust]
         args: ["--"]
 
+      - id: cargo-test
+        name: cargo-test
+        description: run all tests
+        stages: [push]
+        entry: cargo test
+        language: system
+        types: [rust]
+        pass_filenames: false
+

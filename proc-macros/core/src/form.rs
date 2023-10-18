@@ -3,20 +3,41 @@
 use ::convert_case::*;
 use ::derive_more::*;
 use ::itertools::Itertools;
-use ::proc_macro2::TokenStream;
-use ::quote::{format_ident, quote};
+use ::proc_macro2::{Span, TokenStream};
+use ::quote::{format_ident, quote, ToTokens, TokenStreamExt};
 use ::syn::parse::{Error, Parse, ParseStream, Result};
 use ::syn::parse2;
 use ::syn::punctuated::Punctuated;
 
 static ATTR: &str = "form";
 
-#[derive(Clone, Debug, IsVariant)]
+#[derive(Clone, IsVariant)]
 enum ContainerArg {
+    Component(Component),
     Container(TokenStream),
     Internal,
     NoLabels,
     RenameLabels(Case),
+}
+
+#[derive(Clone)]
+enum Action {
+    Path(syn::Path),
+    Url(syn::LitStr),
+}
+
+#[derive(Clone)]
+struct Component {
+    action: Action,
+    id: Option<syn::LitStr>,
+    class: Option<syn::LitStr>,
+    kind: ComponentKind,
+}
+
+#[derive(Clone, Debug, IsVariant)]
+enum ComponentKind {
+    Component,
+    Island,
 }
 
 #[derive(Clone, IsVariant)]
@@ -30,142 +51,8 @@ enum FieldArg {
     NoLabel,
 }
 
-impl ContainerArg {
-    fn as_container(&self) -> Option<&TokenStream> {
-        match self {
-            Self::Container(container) => Some(container),
-            _ => None,
-        }
-    }
-    fn as_rename_labels(&self) -> Option<&Case> {
-        match self {
-            Self::RenameLabels(case) => Some(case),
-            _ => None,
-        }
-    }
-}
-
-impl FieldArg {
-    fn as_class(&self) -> Option<&syn::LitStr> {
-        match self {
-            Self::Class(class) => Some(class),
-            _ => None,
-        }
-    }
-    fn as_config(&self) -> Option<&syn::Expr> {
-        match self {
-            Self::Config(config) => Some(config),
-            _ => None,
-        }
-    }
-    fn as_el(&self) -> Option<&syn::Type> {
-        match self {
-            Self::El(el) => Some(el),
-            _ => None,
-        }
-    }
-    fn as_id_prefix(&self) -> Option<&syn::LitStr> {
-        match self {
-            Self::IdPrefix(id_prefix) => Some(id_prefix),
-            _ => None,
-        }
-    }
-    fn as_label(&self) -> Option<&syn::LitStr> {
-        match self {
-            Self::Label(label) => Some(label),
-            _ => None,
-        }
-    }
-    fn as_label_class(&self) -> Option<&syn::LitStr> {
-        match self {
-            Self::LabelClass(label_class) => Some(label_class),
-            _ => None,
-        }
-    }
-}
-
-impl Parse for ContainerArg {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
-        let lookahead = input.lookahead1();
-        if lookahead.peek(syn::Ident) {
-            let ident = input.parse::<syn::Ident>()?;
-            match &*format!("{ident}") {
-                "container" => {
-                    // base line syntax check that the provided input stream
-                    // looks approximately like an html element
-                    let fork = input.fork();
-                    fork.parse::<syn::Token![<]>()?;
-                    fork.parse::<syn::Ident>()?;
-
-                    Ok(Self::Container(input.parse()?))
-                }
-                "internal" => Ok(Self::Internal),
-                "no_labels" => Ok(Self::NoLabels),
-                "rename_labels" => {
-                    input.parse::<syn::Token![=]>()?;
-                    let case = input.parse::<syn::LitStr>()?;
-                    Ok(Self::RenameLabels(parse_case(case)?))
-                }
-                _ => Err(Error::new_spanned(
-                    &ident,
-                    format!("unrecognized form container attribute: `{ident}`"),
-                )),
-            }
-        } else {
-            Err(lookahead.error())
-        }
-    }
-}
-
-impl Parse for FieldArg {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
-        let lookahead = input.lookahead1();
-        if lookahead.peek(syn::Ident) {
-            let ident = input.parse::<syn::Ident>()?;
-            match &*format!("{ident}") {
-                "class" => {
-                    input.parse::<syn::Token![=]>()?;
-                    Ok(Self::Class(input.parse()?))
-                }
-                "config" => {
-                    input.parse::<syn::Token![=]>()?;
-                    Ok(Self::Config(input.parse()?))
-                }
-                "el" => {
-                    input.parse::<syn::Token![=]>()?;
-                    Ok(Self::El(input.parse()?))
-                }
-                "id_prefix" => {
-                    input.parse::<syn::Token![=]>()?;
-                    Ok(Self::IdPrefix(input.parse()?))
-                }
-                "label" => {
-                    input.parse::<syn::Token![=]>()?;
-                    Ok(Self::Label(input.parse()?))
-                }
-                "label_class" => {
-                    input.parse::<syn::Token![=]>()?;
-                    Ok(Self::LabelClass(input.parse()?))
-                }
-                "no_label" => Ok(Self::NoLabel),
-                _ => Err(Error::new_spanned(
-                    &ident,
-                    format!("unrecognized form field attribute: `{ident}`"),
-                )),
-            }
-        } else {
-            Err(lookahead.error())
-        }
-    }
-}
-
+#[derive(Clone)]
 struct PunctWrap<T, P>(Punctuated<T, P>);
-
-impl<T: Parse, P: Parse> Parse for PunctWrap<T, P> {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
-        Ok(Self(Punctuated::<T, P>::parse_terminated(input)?))
-    }
-}
 
 pub fn derive_form(tokens: TokenStream) -> Result<TokenStream> {
     let ast: syn::DeriveInput = parse2(tokens)?;
@@ -184,6 +71,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream> {
         .flat_map(|x| x.into_iter())
         .collect_vec();
 
+    let component = container_args.iter().find_map(ContainerArg::as_component);
     let container = container_args.iter().find_map(ContainerArg::as_container);
     let is_internal = container_args.iter().any(|carg| carg.is_internal());
     let is_no_labels = container_args.iter().any(|carg| carg.is_no_labels());
@@ -192,6 +80,10 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream> {
     let leptos_krate: syn::Path = parse2(match is_internal {
         true => quote!(::leptos),
         false => quote!(::leptos_form::internal::leptos),
+    })?;
+    let leptos_router_krate: syn::Path = parse2(match is_internal {
+        true => quote!(::leptos_router),
+        false => quote!(::leptos_form::internal::leptos_router),
     })?;
     let leptos_form_krate: syn::Path = parse2(match is_internal {
         true => quote!(crate),
@@ -398,6 +290,62 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream> {
         }
     });
 
+    let component_tokens = component.map(|Component { action, kind, id, class }| {
+        let id = id.iter();
+        let class = class.iter();
+
+        let (tag_import, action_def, open_tag, close_tag) = match action {
+            Action::Path(action) => (
+                quote!(use #leptos_router_krate::ActionForm;),
+                Some(quote!(let action = #leptos_krate::create_server_action::<#action>();)),
+                quote!(<ActionForm action=action #(id=#id)* #(class=#class)*>),
+                quote!(</ActionForm>),
+            ),
+            Action::Url(action) => (
+                quote!(use #leptos_router_krate::Form;),
+                None,
+                quote!(<Form action=#action #(id=#id)* #(class=#class)*>),
+                quote!(</Form>),
+            ),
+        };
+        let action_def = action_def.into_iter();
+        let config = quote!(());
+
+        let pound = "#".parse::<TokenStream>().unwrap();
+        let tokens = quote!(
+            #pound[#leptos_krate::#kind]
+            #vis fn #ident(initial_value: #ident) -> impl #leptos_krate::IntoView {
+                use #leptos_krate::IntoView;
+                #tag_import
+
+                #(#action_def)*
+
+                let config = #config;
+
+                let signal = #leptos_krate::create_rw_signal(initial_value.into_signal_type(config.clone()));
+                let props = #leptos_form_krate::RenderProps::builder()
+                    .id(None)
+                    .name("")
+                    .id_prefix(None)
+                    .name_prefix(None)
+                    .signal(signal)
+                    .ref_ax(#leptos_form_krate::ref_ax_factory(|x| x))
+                    .mut_ax(#leptos_form_krate::mut_ax_factory(|x| x))
+                    .config(config)
+                    .build();
+
+                let view = <#ident as #leptos_form_krate::FormComponent<#signal_ident, #leptos_krate::View>>::render(props);
+
+                #leptos_krate::view! {
+                    #open_tag
+                        {view}
+                    #close_tag
+                }
+            }
+        );
+        tokens
+    });
+
     let tokens = quote!(
         #signal_ty_def
 
@@ -417,7 +365,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream> {
             type El = #leptos_krate::View;
         }
 
-        impl<El> #leptos_form_krate::FormSignalType<El> for #ident {
+        impl #leptos_form_krate::FormSignalType<#leptos_krate::View> for #ident {
             type Config = ();
             type SignalType = #signal_ident;
             fn into_signal_type(self, config: Self::Config) -> Self::SignalType {
@@ -444,6 +392,8 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream> {
                 }
             }
         }
+
+        #component_tokens
     );
 
     Ok(tokens)
@@ -486,6 +436,229 @@ fn parse_case(lit_str: syn::LitStr) -> Result<Case> {
         "aLtErNaTiNg CaSe" => Case::Alternating,
         _ => return Err(Error::new_spanned(lit_str, "unsupported label case")),
     })
+}
+
+impl ContainerArg {
+    fn as_component(&self) -> Option<&Component> {
+        match self {
+            Self::Component(component) => Some(component),
+            _ => None,
+        }
+    }
+    fn as_container(&self) -> Option<&TokenStream> {
+        match self {
+            Self::Container(container) => Some(container),
+            _ => None,
+        }
+    }
+    fn as_rename_labels(&self) -> Option<&Case> {
+        match self {
+            Self::RenameLabels(case) => Some(case),
+            _ => None,
+        }
+    }
+}
+
+impl FieldArg {
+    fn as_class(&self) -> Option<&syn::LitStr> {
+        match self {
+            Self::Class(class) => Some(class),
+            _ => None,
+        }
+    }
+    fn as_config(&self) -> Option<&syn::Expr> {
+        match self {
+            Self::Config(config) => Some(config),
+            _ => None,
+        }
+    }
+    fn as_el(&self) -> Option<&syn::Type> {
+        match self {
+            Self::El(el) => Some(el),
+            _ => None,
+        }
+    }
+    fn as_id_prefix(&self) -> Option<&syn::LitStr> {
+        match self {
+            Self::IdPrefix(id_prefix) => Some(id_prefix),
+            _ => None,
+        }
+    }
+    fn as_label(&self) -> Option<&syn::LitStr> {
+        match self {
+            Self::Label(label) => Some(label),
+            _ => None,
+        }
+    }
+    fn as_label_class(&self) -> Option<&syn::LitStr> {
+        match self {
+            Self::LabelClass(label_class) => Some(label_class),
+            _ => None,
+        }
+    }
+}
+
+impl Parse for ContainerArg {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let lookahead = input.lookahead1();
+        if lookahead.peek(syn::Ident) {
+            let ident = input.parse::<syn::Ident>()?;
+            Ok(match &*ident.to_string() {
+                "component" => Self::Component(parse_component_args(input, ComponentKind::Component)?),
+                "container" => {
+                    // base line syntax check that the provided input stream
+                    // looks approximately like an html element
+                    let fork = input.fork();
+                    fork.parse::<syn::Token![<]>()?;
+                    fork.parse::<syn::Ident>()?;
+                    Self::Container(input.parse()?)
+                }
+                "island" => Self::Component(parse_component_args(input, ComponentKind::Island)?),
+                "internal" => Self::Internal,
+                "no_labels" => Self::NoLabels,
+                "rename_labels" => {
+                    input.parse::<syn::Token![=]>()?;
+                    let case = input.parse::<syn::LitStr>()?;
+                    Self::RenameLabels(parse_case(case)?)
+                }
+                _ => {
+                    return Err(Error::new_spanned(
+                        &ident,
+                        format!("unrecognized form container attribute: `{ident}`"),
+                    ))
+                }
+            })
+        } else {
+            Err(lookahead.error())
+        }
+    }
+}
+
+impl Parse for FieldArg {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let lookahead = input.lookahead1();
+        if lookahead.peek(syn::Ident) {
+            let ident = input.parse::<syn::Ident>()?;
+            match &*format!("{ident}") {
+                "class" => {
+                    input.parse::<syn::Token![=]>()?;
+                    Ok(Self::Class(input.parse()?))
+                }
+                "config" => {
+                    input.parse::<syn::Token![=]>()?;
+                    Ok(Self::Config(input.parse()?))
+                }
+                "el" => {
+                    input.parse::<syn::Token![=]>()?;
+                    Ok(Self::El(input.parse()?))
+                }
+                "id_prefix" => {
+                    input.parse::<syn::Token![=]>()?;
+                    Ok(Self::IdPrefix(input.parse()?))
+                }
+                "label" => {
+                    input.parse::<syn::Token![=]>()?;
+                    Ok(Self::Label(input.parse()?))
+                }
+                "label_class" => {
+                    input.parse::<syn::Token![=]>()?;
+                    Ok(Self::LabelClass(input.parse()?))
+                }
+                "no_label" => Ok(Self::NoLabel),
+                _ => Err(Error::new_spanned(
+                    &ident,
+                    format!("unrecognized form field attribute: `{ident}`"),
+                )),
+            }
+        } else {
+            Err(lookahead.error())
+        }
+    }
+}
+
+impl Parse for Action {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let lookahead = input.lookahead1();
+        if lookahead.peek(syn::LitStr) {
+            Ok(Self::Url(input.parse()?))
+        } else if lookahead.peek(syn::Ident) || lookahead.peek(syn::Token![::]) {
+            Ok(Self::Path(input.parse()?))
+        } else {
+            Err(lookahead.error())
+        }
+    }
+}
+
+impl ToTokens for ComponentKind {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            Self::Component => tokens.append(proc_macro2::Ident::new("component", Span::call_site())),
+            Self::Island => tokens.append(proc_macro2::Ident::new("island", Span::call_site())),
+        }
+    }
+}
+
+enum ComponentArg {
+    Action(Action),
+    Id(syn::LitStr),
+    Class(syn::LitStr),
+}
+
+impl Parse for ComponentArg {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let lookahead = input.lookahead1();
+        if lookahead.peek(syn::Ident) {
+            let ident = input.parse::<syn::Ident>()?;
+            Ok(match &*ident.to_string() {
+                "action" => {
+                    input.parse::<syn::Token![=]>()?;
+                    Self::Action(input.parse()?)
+                }
+                "class" => {
+                    input.parse::<syn::Token![=]>()?;
+                    Self::Class(input.parse()?)
+                }
+                "id" => {
+                    input.parse::<syn::Token![=]>()?;
+                    Self::Id(input.parse()?)
+                }
+                _ => return Err(Error::new_spanned(ident, "unrecognized form component arg")),
+            })
+        } else {
+            Err(lookahead.error())
+        }
+    }
+}
+
+fn parse_component_args(input: ParseStream<'_>, kind: ComponentKind) -> Result<Component> {
+    let error_span = input.span();
+    let content;
+    syn::parenthesized!(content in input);
+
+    let mut action = None;
+    let mut id = None;
+    let mut class = None;
+
+    for component_arg in content.parse_terminated(ComponentArg::parse, syn::Token![,])? {
+        match component_arg {
+            ComponentArg::Action(x) => action = Some(x),
+            ComponentArg::Id(lit_str) => id = Some(lit_str),
+            ComponentArg::Class(lit_str) => class = Some(lit_str),
+        }
+    }
+
+    Ok(Component {
+        kind,
+        id,
+        class,
+        action: action.ok_or_else(|| Error::new(error_span, "action must be specified"))?,
+    })
+}
+
+impl<T: Parse, P: Parse> Parse for PunctWrap<T, P> {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        Ok(Self(Punctuated::<T, P>::parse_terminated(input)?))
+    }
 }
 
 #[cfg(test)]
@@ -534,7 +707,7 @@ mod test {
                 type El = #leptos_krate::View;
             }
 
-            impl<El> #leptos_form_krate::FormSignalType<El> for MyFormData {
+            impl #leptos_form_krate::FormSignalType<#leptos_krate::View> for MyFormData {
                 type Config = ();
                 type SignalType = __MyFormDataSignalType;
                 fn into_signal_type(self, config: Self::Config) -> Self::SignalType {
@@ -683,7 +856,7 @@ mod test {
                 type El = #leptos_krate::View;
             }
 
-            impl<El> #leptos_form_krate::FormSignalType<El> for MyFormData {
+            impl #leptos_form_krate::FormSignalType<#leptos_krate::View> for MyFormData {
                 type Config = ();
                 type SignalType = __MyFormDataSignalType;
                 fn into_signal_type(self, config: Self::Config) -> Self::SignalType {
@@ -739,6 +912,125 @@ mod test {
                         </label>
                         {_zz_view}
                     }
+                }
+            }
+        );
+
+        let output = derive_form(input)?;
+
+        let expected = cleanup(&expected);
+        let output = cleanup(&output);
+
+        let expected = pretty(expected)?;
+        let output = pretty(output)?;
+
+        assert_eq_text!(expected, output);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test3() -> Result<()> {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = "/api/my-form-data"))]
+            pub struct MyFormData {
+                pub ayo: u8,
+            }
+        );
+
+        let leptos_krate = quote!(::leptos_form::internal::leptos);
+        let leptos_router_krate = quote!(::leptos_form::internal::leptos_router);
+        let leptos_form_krate = quote!(::leptos_form);
+
+        let expected = quote!(
+            #[derive(Clone, Debug, Default)]
+            pub struct __MyFormDataSignalType {
+                ayo: <u8 as #leptos_form_krate::FormSignalType<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::SignalType,
+            }
+
+            impl ::core::convert::AsRef<__MyFormDataSignalType> for __MyFormDataSignalType {
+                fn as_ref(&self) -> &Self {
+                    self
+                }
+            }
+
+            impl ::core::convert::AsMut<__MyFormDataSignalType> for __MyFormDataSignalType {
+                fn as_mut(&mut self) -> &mut Self {
+                    self
+                }
+            }
+
+            impl #leptos_form_krate::DefaultHtmlElement for MyFormData {
+                type El = #leptos_krate::View;
+            }
+
+            impl #leptos_form_krate::FormSignalType<#leptos_krate::View> for MyFormData {
+                type Config = ();
+                type SignalType = __MyFormDataSignalType;
+                fn into_signal_type(self, config: Self::Config) -> Self::SignalType {
+                    todo!()
+                }
+                fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, FormError> {
+                    todo!()
+                }
+            }
+
+            impl<__SignalType: 'static> #leptos_form_krate::FormComponent<__SignalType, #leptos_krate::View> for MyFormData {
+                fn render(props: #leptos_form_krate::RenderProps<
+                    __SignalType,
+                    impl #leptos_form_krate::RefAccessor<__SignalType, Self::SignalType>,
+                    impl #leptos_form_krate::MutAccessor<__SignalType, Self::SignalType>,
+                    Self::Config,
+                >) -> impl #leptos_krate::IntoView {
+                    use #leptos_krate::{IntoAttribute, IntoView};
+
+                    let _ayo_id = #leptos_form_krate::format_form_id(props.id_prefix.as_ref(), "ayo");
+                    let _ayo_name = #leptos_form_krate::format_form_name(props.name_prefix.as_ref(), "ayo");
+                    let _ayo_props = #leptos_form_krate::RenderProps::builder()
+                        .id(_ayo_id.clone())
+                        .name(_ayo_name.clone())
+                        .id_prefix(_ayo_id.clone())
+                        .name_prefix(_ayo_name)
+                        .signal(props.signal)
+                        .ref_ax(#leptos_form_krate::ref_ax_factory(move |t: &__SignalType| &(props.ref_ax)(t).ayo))
+                        .mut_ax(#leptos_form_krate::mut_ax_factory(move |t: &mut __SignalType| &mut (props.mut_ax)(t).ayo))
+                        .config(<u8 as #leptos_form_krate::FormSignalType<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
+                        .build();
+                    let _ayo_view = <u8 as #leptos_form_krate::FormComponent<__SignalType, <u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_ayo_props);
+
+                    #leptos_krate::view! {
+                        <label for={_ayo_id}>
+                            "ayo"
+                            {_ayo_view}
+                        </label>
+                    }
+                }
+            }
+
+            #[#leptos_krate::component]
+            pub fn MyFormData(initial_value: MyFormData) -> impl #leptos_krate::IntoView {
+                use #leptos_krate::IntoView;
+                use #leptos_router_krate::Form;
+
+                let config = ();
+
+                let signal = #leptos_krate::create_rw_signal(initial_value.into_signal_type(config.clone()));
+                let props = #leptos_form_krate::RenderProps::builder()
+                    .id(None)
+                    .name("")
+                    .id_prefix(None)
+                    .name_prefix(None)
+                    .signal(signal)
+                    .ref_ax(#leptos_form_krate::ref_ax_factory(|x| x))
+                    .mut_ax(#leptos_form_krate::mut_ax_factory(|x| x))
+                    .config(config)
+                    .build();
+                let view = <MyFormData as #leptos_form_krate::FormComponent<__MyFormDataSignalType, #leptos_krate::View>>::render(props);
+                #leptos_krate::view! {
+                    <Form action="/api/my-form-data">
+                        {view}
+                    </Form>
                 }
             }
         );
