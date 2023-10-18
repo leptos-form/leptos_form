@@ -32,31 +32,55 @@ enum FieldArg {
 
 impl ContainerArg {
     fn as_container(&self) -> Option<&TokenStream> {
-        match self { Self::Container(container) => Some(container), _ => None }
+        match self {
+            Self::Container(container) => Some(container),
+            _ => None,
+        }
     }
     fn as_rename_labels(&self) -> Option<&Case> {
-        match self { Self::RenameLabels(case) => Some(case), _ => None }
+        match self {
+            Self::RenameLabels(case) => Some(case),
+            _ => None,
+        }
     }
 }
 
 impl FieldArg {
     fn as_class(&self) -> Option<&syn::LitStr> {
-        match self { Self::Class(class) => Some(class), _ => None }
+        match self {
+            Self::Class(class) => Some(class),
+            _ => None,
+        }
     }
     fn as_config(&self) -> Option<&syn::Expr> {
-        match self { Self::Config(config) => Some(config), _ => None }
+        match self {
+            Self::Config(config) => Some(config),
+            _ => None,
+        }
     }
     fn as_el(&self) -> Option<&syn::Type> {
-        match self { Self::El(el) => Some(el), _ => None }
+        match self {
+            Self::El(el) => Some(el),
+            _ => None,
+        }
     }
     fn as_id_prefix(&self) -> Option<&syn::LitStr> {
-        match self { Self::IdPrefix(id_prefix) => Some(id_prefix), _ => None }
+        match self {
+            Self::IdPrefix(id_prefix) => Some(id_prefix),
+            _ => None,
+        }
     }
     fn as_label(&self) -> Option<&syn::LitStr> {
-        match self { Self::Label(label) => Some(label), _ => None }
+        match self {
+            Self::Label(label) => Some(label),
+            _ => None,
+        }
     }
     fn as_label_class(&self) -> Option<&syn::LitStr> {
-        match self { Self::LabelClass(label_class) => Some(label_class), _ => None }
+        match self {
+            Self::LabelClass(label_class) => Some(label_class),
+            _ => None,
+        }
     }
 }
 
@@ -74,18 +98,21 @@ impl Parse for ContainerArg {
                     fork.parse::<syn::Ident>()?;
 
                     Ok(Self::Container(input.parse()?))
-                },
+                }
                 "internal" => Ok(Self::Internal),
                 "no_labels" => Ok(Self::NoLabels),
                 "rename_labels" => {
                     input.parse::<syn::Token![=]>()?;
                     let case = input.parse::<syn::LitStr>()?;
                     Ok(Self::RenameLabels(parse_case(case)?))
-                },
-                _ => return Err(Error::new_spanned(&ident, format!("unrecognized form container attribute: `{ident}`"))),
+                }
+                _ => Err(Error::new_spanned(
+                    &ident,
+                    format!("unrecognized form container attribute: `{ident}`"),
+                )),
             }
         } else {
-            return Err(lookahead.error());
+            Err(lookahead.error())
         }
     }
 }
@@ -99,32 +126,35 @@ impl Parse for FieldArg {
                 "class" => {
                     input.parse::<syn::Token![=]>()?;
                     Ok(Self::Class(input.parse()?))
-                },
+                }
                 "config" => {
                     input.parse::<syn::Token![=]>()?;
                     Ok(Self::Config(input.parse()?))
-                },
+                }
                 "el" => {
                     input.parse::<syn::Token![=]>()?;
                     Ok(Self::El(input.parse()?))
-                },
+                }
                 "id_prefix" => {
                     input.parse::<syn::Token![=]>()?;
                     Ok(Self::IdPrefix(input.parse()?))
-                },
+                }
                 "label" => {
                     input.parse::<syn::Token![=]>()?;
                     Ok(Self::Label(input.parse()?))
-                },
+                }
                 "label_class" => {
                     input.parse::<syn::Token![=]>()?;
                     Ok(Self::LabelClass(input.parse()?))
-                },
+                }
                 "no_label" => Ok(Self::NoLabel),
-                _ => return Err(Error::new_spanned(&ident, format!("unrecognized form field attribute: `{ident}`"))),
+                _ => Err(Error::new_spanned(
+                    &ident,
+                    format!("unrecognized form field attribute: `{ident}`"),
+                )),
             }
         } else {
-            return Err(lookahead.error());
+            Err(lookahead.error())
         }
     }
 }
@@ -143,9 +173,11 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream> {
     let vis = &ast.vis;
     let signal_ident = format_ident!("__{}SignalType", ast.ident);
 
-    let container_args = ast.attrs
+    let container_args = ast
+        .attrs
         .iter()
-        .filter_map(|attr| attr.path().is_ident(ATTR).then(|| attr.parse_args::<PunctWrap<ContainerArg, syn::Token![,]>>()))
+        .filter(|&attr| attr.path().is_ident(ATTR))
+        .map(|attr| attr.parse_args::<PunctWrap<ContainerArg, syn::Token![,]>>())
         .map(|x| x.map(|x| x.0))
         .collect::<Result<Vec<_>>>()?
         .into_iter()
@@ -171,25 +203,36 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream> {
         _ => return Err(Error::new_spanned(ast, "Form can only be derived for structs")),
     };
 
-    let (fields, field_axs): (Vec<_>, Vec<_>) = data_struct.fields
+    let (fields, field_axs): (Vec<_>, Vec<_>) = data_struct
+        .fields
         .iter()
         .enumerate()
-        .map(|(i, field)| (
-            field,
-            field.ident.as_ref().map(|x| quote!(#x)).unwrap_or_else(|| i.to_string().parse().unwrap()),
-        ))
+        .map(|(i, field)| {
+            (
+                field,
+                field
+                    .ident
+                    .as_ref()
+                    .map(|x| quote!(#x))
+                    .unwrap_or_else(|| i.to_string().parse().unwrap()),
+            )
+        })
         .unzip();
 
     let all_field_args = fields
         .iter()
-        .map(|field| Ok(field.attrs
-            .iter()
-            .filter_map(|attr| attr.path().is_ident(ATTR).then(|| attr.parse_args::<PunctWrap<FieldArg, syn::Token![,]>>()))
-            .map(|x| x.map(|x| x.0))
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flat_map(|x| x.into_iter())
-            .collect_vec()))
+        .map(|field| {
+            Ok(field
+                .attrs
+                .iter()
+                .filter(|&attr| attr.path().is_ident(ATTR))
+                .map(|attr| attr.parse_args::<PunctWrap<FieldArg, syn::Token![,]>>())
+                .map(|x| x.map(|x| x.0))
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .flat_map(|x| x.into_iter())
+                .collect_vec())
+        })
         .collect::<Result<Vec<_>>>()?;
 
     let field_el_tys = fields
@@ -201,19 +244,20 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream> {
     let signal_fields = fields
         .iter()
         .enumerate()
-        .map(|(i, field)| Ok(syn::Field {
-            attrs: vec![],
-            vis: syn::Visibility::Inherited,
-            mutability: syn::FieldMutability::None,
-            ident: field.ident.clone(),
-            colon_token: field.colon_token,
-            ty: signal_field_ty(&leptos_krate, &leptos_form_krate, field, &field_el_tys[i])?,
-            
-        }))
+        .map(|(i, field)| {
+            Ok(syn::Field {
+                attrs: vec![],
+                vis: syn::Visibility::Inherited,
+                mutability: syn::FieldMutability::None,
+                ident: field.ident.clone(),
+                colon_token: field.colon_token,
+                ty: signal_field_ty(&leptos_krate, &leptos_form_krate, field, &field_el_tys[i])?,
+            })
+        })
         .collect::<Result<Vec<_>>>()?;
 
     let signal_ty_def = match data_struct.fields {
-        syn::Fields::Named(_) => quote!(    
+        syn::Fields::Named(_) => quote!(
             #[derive(Clone, Debug, Default)]
             #vis struct #signal_ident {
                 #(#signal_fields,)*
@@ -227,7 +271,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream> {
         ),
         syn::Fields::Unit => return Err(Error::new_spanned(ast, "Form cannot be derived on unit types")),
     };
-    
+
     let props_ident = format_ident!("props");
     let signal_ty_param = format_ident!("__SignalType");
 
@@ -258,7 +302,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream> {
 
             let field_ax = &field_axs[i];
             let field_name = field_ax.to_string();
-            let field_id = id.as_ref().unwrap_or_else(|| &field_name);
+            let field_id = id.as_ref().unwrap_or(&field_name);
 
             let field_id = if id.is_none() { field_id.to_case(Case::Kebab) } else { field_id.to_string() };
 
@@ -293,7 +337,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream> {
                         .mut_ax(#leptos_form_krate::mut_ax_factory(move |t: &mut #signal_ty_param| &mut (#props_ident.mut_ax)(t).#field_ax))
                         .config(#config)
                         .build();
-                    
+
                     let #field_view_ident = <#field_ty as #leptos_form_krate::FormComponent<#signal_ty_param, #field_el_ty>>::render(#build_props_ident);
                 ),
             )
@@ -314,24 +358,30 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream> {
                 .iter()
                 .find_map(FieldArg::as_label)
                 .map(|x| x.value())
-                .or_else(|| Some(match rename_label_case {
-                    Some(case) => field_ax.to_string().to_case(*case),
-                    None => field_ax.to_string(),
-                }))
+                .or_else(|| {
+                    Some(match rename_label_case {
+                        Some(case) => field_ax.to_string().to_case(*case),
+                        None => field_ax.to_string(),
+                    })
+                })
         })
         .collect_vec();
 
     let label_classes = labels
         .iter()
         .enumerate()
-        .map(|(i, label)| label.as_ref().and_then(|label| all_field_args[i].iter().find_map(FieldArg::as_label_class)))
+        .map(|(i, label)| {
+            label
+                .as_ref()
+                .and_then(|label| all_field_args[i].iter().find_map(FieldArg::as_label_class))
+        })
         .collect_vec();
 
     let wrapped_field_views = (0..fields.len()).map(|i| {
         let label = &labels[i];
         let label_class = label_classes[i].as_ref().into_iter();
         let field_id_ident = &field_id_idents[i];
-        
+
         let build_props_ident = &build_props_idents[i];
         let field_el_ty = &field_el_tys[i];
 
@@ -408,7 +458,12 @@ fn field_el_ty(leptos_form_krate: &syn::Path, field: &syn::Field, field_args: &[
         .unwrap_or_else(|| parse2(quote!(<#ty as #leptos_form_krate::DefaultHtmlElement>::El)))
 }
 
-fn signal_field_ty(leptos_krate: &syn::Path, leptos_form_krate: &syn::Path, field: &syn::Field, el_ty: &syn::Type) -> Result<syn::Type> {
+fn signal_field_ty(
+    leptos_krate: &syn::Path,
+    leptos_form_krate: &syn::Path,
+    field: &syn::Field,
+    el_ty: &syn::Type,
+) -> Result<syn::Type> {
     let ty = &field.ty;
     parse2(quote!(<#ty as #leptos_form_krate::FormSignalType<#el_ty>>::SignalType))
 }
@@ -420,14 +475,14 @@ fn parse_case(lit_str: syn::LitStr) -> Result<Case> {
         "Title Case" => Case::Title,
         "tOGGLE cASE" => Case::Toggle,
         "camelCase" => Case::Camel,
-        "PascalCase"|"UpperCamelCase" => Case::Pascal,
+        "PascalCase" | "UpperCamelCase" => Case::Pascal,
         "snake_case" => Case::Snake,
-        "UPPER_SNAKE_CASE"|"SCREAMING_SNAKE_CASE" => Case::UpperSnake,
+        "UPPER_SNAKE_CASE" | "SCREAMING_SNAKE_CASE" => Case::UpperSnake,
         "kebab-case" => Case::Kebab,
-        "COBOL-CASE"|"UPPER-KEBAB-CASE"|"SCREAMING-KEBAB-CASE" => Case::Cobol,
+        "COBOL-CASE" | "UPPER-KEBAB-CASE" | "SCREAMING-KEBAB-CASE" => Case::Cobol,
         "Train-Case" => Case::Train,
         "flatcase" => Case::Flat,
-        "UPPERFLATCASE"|"SCREAMINGFLATCASE" => Case::UpperFlat,
+        "UPPERFLATCASE" | "SCREAMINGFLATCASE" => Case::UpperFlat,
         "aLtErNaTiNg CaSe" => Case::Alternating,
         _ => return Err(Error::new_spanned(lit_str, "unsupported label case")),
     })
@@ -435,8 +490,8 @@ fn parse_case(lit_str: syn::LitStr) -> Result<Case> {
 
 #[cfg(test)]
 mod test {
-    use crate::assert_eq_text;
     use super::*;
+    use crate::assert_eq_text;
 
     #[test]
     fn test1() -> Result<()> {
@@ -454,7 +509,7 @@ mod test {
         let leptos_krate = quote!(::leptos_form::internal::leptos);
         let leptos_form_krate = quote!(::leptos_form);
 
-        let expected = quote!(    
+        let expected = quote!(
             #[derive(Clone, Debug, Default)]
             pub struct __MyFormDataSignalType {
                 id: <Uuid as #leptos_form_krate::FormSignalType<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::SignalType,
@@ -605,7 +660,7 @@ mod test {
         let leptos_krate = quote!(::leptos_form::internal::leptos);
         let leptos_form_krate = quote!(::leptos_form);
 
-        let expected = quote!(    
+        let expected = quote!(
             #[derive(Clone, Debug, Default)]
             pub struct __MyFormDataSignalType {
                 abc_123: <Uuid as #leptos_form_krate::FormSignalType<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::SignalType,
@@ -701,10 +756,10 @@ mod test {
         Ok(())
     }
 
-    pub fn cleanup(tokens: &TokenStream) -> String { 
+    pub fn cleanup(tokens: &TokenStream) -> String {
         let tokens = tokens.to_string();
-        let cleaned_up = tokens.replace("< <", "<<").replace("> >", ">>");
-        cleaned_up
+
+        tokens.replace("< <", "<<").replace("> >", ">>")
     }
 
     pub fn pretty(cleaned_up: String) -> Result<String> {

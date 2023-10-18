@@ -27,7 +27,7 @@ impl FormError {
     }
 }
 
-pub fn format_form_id(id_prefix: Option<&Oco<'_, str>>, id: &'static str) -> Oco<'static, str> {        
+pub fn format_form_id(id_prefix: Option<&Oco<'_, str>>, id: &'static str) -> Oco<'static, str> {
     match id_prefix {
         None => Oco::Borrowed(id),
         Some(prefix) if prefix == "" => Oco::Borrowed(id),
@@ -35,7 +35,7 @@ pub fn format_form_id(id_prefix: Option<&Oco<'_, str>>, id: &'static str) -> Oco
     }
 }
 
-pub fn format_form_name(name_prefix: Option<&Oco<'_, str>>, field_name: &'static str) -> Oco<'static, str> {        
+pub fn format_form_name(name_prefix: Option<&Oco<'_, str>>, field_name: &'static str) -> Oco<'static, str> {
     match name_prefix {
         None => Oco::Borrowed(field_name),
         Some(prefix) if prefix == "" => Oco::Borrowed(field_name),

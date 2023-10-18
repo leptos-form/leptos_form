@@ -1,6 +1,6 @@
 use crate::*;
-use ::leptos::*;
 use ::leptos::html::*;
+use ::leptos::*;
 use ::std::borrow::Cow;
 
 macro_rules! str_impl {

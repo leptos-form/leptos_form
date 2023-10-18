@@ -1,0 +1,76 @@
+# See https://pre-commit.com for more information
+# NOTE: must run:
+# pip install pre-commit
+# curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+# pre-commit install --hook-type pre-commit
+# pre-commit install --hook-type pre-push
+default_install_hook_types:
+  - pre-commit
+  - pre-push
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v3.2.0
+    hooks:
+      - id: check-added-large-files
+        stages: [commit, push]
+
+      - id: check-merge-conflict
+        args: ["--assume-in-merge"]
+        stages: [commit, push]
+
+      - id: check-symlinks
+        stages: [commit, push]
+
+      - id: check-toml
+        stages: [commit, push]
+
+      - id: check-yaml
+        args: ["--allow-multiple-documents"]
+        stages: [commit, push]
+
+      - id: trailing-whitespace
+        stages: [commit, push]
+
+  - repo: local
+    hooks:
+      - id: cargo-clippy
+        name: cargo-clippy
+        description: lint the minimal changed packages in the cargo workspace
+        stages: [commit]
+        entry: cargo
+        args:
+        - clippy
+        - --verbose
+        - --fix
+        - --allow-dirty
+        - --allow-staged
+        - --all-features
+        language: system
+        types: [rust]
+        always_run: true
+        pass_filenames: false
+
+      - id: cargo-clippy
+        name: cargo-clippy
+        description: lint the minimal changed packages in the cargo workspace
+        stages: [push]
+        entry: cargo
+        args:
+        - clippy
+        - --verbose
+        - --all-features
+        language: system
+        types: [rust]
+        always_run: true
+        pass_filenames: false
+
+      - id: cargo-fmt
+        name: cargo-fmt
+        description: format files with cargo fmt
+        stages: [commit, push]
+        entry: cargo fmt
+        language: system
+        types: [rust]
+        args: ["--"]
+

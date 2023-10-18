@@ -1,0 +1,4 @@
+max_width = 120
+newline_style = "Unix" # Prevent carriage returns
+single_line_if_else_max_width = 80
+use_small_heuristics = "Default" # The default setting has a heuristic which splits lines too aggresively

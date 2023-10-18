@@ -39,4 +39,3 @@ pub fn format_diff(chunks: Vec<dissimilar::Chunk<'_>>) -> String {
     }
     buf
 }
-

@@ -1,8 +1,8 @@
 #![allow(unused)]
 
 use crate::*;
-use ::leptos::*;
 use ::leptos::html::*;
+use ::leptos::*;
 
 #[cfg(feature = "uuid")]
 impl DefaultHtmlElement for ::uuid::Uuid {
@@ -24,7 +24,14 @@ impl FormSignalType<HtmlElement<Input>> for ::uuid::Uuid {
 
 #[cfg(feature = "uuid")]
 impl<T: 'static> FormComponent<T, HtmlElement<Input>> for ::uuid::Uuid {
-    fn render(props: RenderProps<T, impl RefAccessor<T, Self::SignalType>, impl MutAccessor<T, Self::SignalType>, Self::Config>) -> impl IntoView { 
+    fn render(
+        props: RenderProps<
+            T,
+            impl RefAccessor<T, Self::SignalType>,
+            impl MutAccessor<T, Self::SignalType>,
+            Self::Config,
+        >,
+    ) -> impl IntoView {
         props.signal.with(|t| {
             let value = (props.ref_ax)(t);
             view! {
@@ -71,7 +78,7 @@ cfg_if! { if #[cfg(feature = "chrono")] {
                 fn into_signal_type(self, config: Self::Config) -> Self::SignalType {
                     self.format(config.format).to_string()
                 }
-                
+
                 $($from)*
             }
 
@@ -118,4 +125,3 @@ cfg_if! { if #[cfg(feature = "chrono")] {
         },
     );
 } }
-

@@ -3,9 +3,9 @@ mod impls;
 pub use impls::*;
 
 use crate::*;
-use ::leptos::*;
 use ::leptos::ev::Event;
 use ::leptos::html::*;
+use ::leptos::*;
 use ::web_sys::EventTarget;
 
 pub trait FormSignalType<El>: Sized {
@@ -15,7 +15,14 @@ pub trait FormSignalType<El>: Sized {
     fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, FormError>;
 }
 pub trait FormComponent<T: 'static, El>: FormSignalType<El> {
-    fn render(props: RenderProps<T, impl RefAccessor<T, Self::SignalType>, impl MutAccessor<T, Self::SignalType>, Self::Config>) -> impl IntoView;
+    fn render(
+        props: RenderProps<
+            T,
+            impl RefAccessor<T, Self::SignalType>,
+            impl MutAccessor<T, Self::SignalType>,
+            Self::Config,
+        >,
+    ) -> impl IntoView;
 }
 
 pub trait DefaultHtmlElement {
@@ -47,19 +54,29 @@ pub trait RefAccessor<T, U>: Copy + Fn(&T) -> &U + 'static {}
 pub trait MutAccessor<T, U>: Copy + Fn(&mut T) -> &mut U + 'static {}
 
 #[doc(hidden)]
-pub fn setter<T: 'static, U>(signal: RwSignal<T>, mut_ax: impl MutAccessor<T, U>, from_target: impl Copy + Fn(EventTarget) -> Option<U> + 'static) -> impl Fn(Event) {
+pub fn setter<T: 'static, U>(
+    signal: RwSignal<T>,
+    mut_ax: impl MutAccessor<T, U>,
+    from_target: impl Copy + Fn(EventTarget) -> Option<U> + 'static,
+) -> impl Fn(Event) {
     move |event| {
-        event.target().and_then(from_target).map(|val| signal.update(|x| {
-            *mut_ax(x) = val;
-        }));
+        if let Some(val) = event.target().and_then(from_target) {
+            signal.update(|x| {
+                *mut_ax(x) = val;
+            })
+        }
     }
 }
 
 #[doc(hidden)]
-pub fn ref_ax_factory<T, U>(f: impl RefAccessor<T, U>) -> impl RefAccessor<T, U> { f }
+pub fn ref_ax_factory<T, U>(f: impl RefAccessor<T, U>) -> impl RefAccessor<T, U> {
+    f
+}
 
 #[doc(hidden)]
-pub fn mut_ax_factory<T, U>(f: impl MutAccessor<T, U>) -> impl MutAccessor<T, U> { f }
+pub fn mut_ax_factory<T, U>(f: impl MutAccessor<T, U>) -> impl MutAccessor<T, U> {
+    f
+}
 
 impl<T, U, F: Copy + Fn(&T) -> &U + 'static> RefAccessor<T, U> for F {}
 
@@ -81,7 +98,7 @@ where
     fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, FormError> {
         match signal_type == U::SignalType::default() {
             true => Ok(None),
-            false => Ok(Some(U::try_from_signal_type(signal_type, config)?))
+            false => Ok(Some(U::try_from_signal_type(signal_type, config)?)),
         }
     }
 }
@@ -91,7 +108,14 @@ where
     U: FormComponent<T, Input>,
     U::SignalType: Default + Eq,
 {
-    fn render(props: RenderProps<T, impl RefAccessor<T, Self::SignalType>, impl MutAccessor<T, Self::SignalType>, Self::Config>) -> impl IntoView {
+    fn render(
+        props: RenderProps<
+            T,
+            impl RefAccessor<T, Self::SignalType>,
+            impl MutAccessor<T, Self::SignalType>,
+            Self::Config,
+        >,
+    ) -> impl IntoView {
         U::render(props)
     }
 }
