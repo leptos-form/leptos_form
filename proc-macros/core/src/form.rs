@@ -371,7 +371,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream> {
             fn into_signal_type(self, config: Self::Config) -> Self::SignalType {
                 todo!()
             }
-            fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, FormError> {
+            fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, #leptos_form_krate::FormError> {
                 todo!()
             }
         }
@@ -713,7 +713,7 @@ mod test {
                 fn into_signal_type(self, config: Self::Config) -> Self::SignalType {
                     todo!()
                 }
-                fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, FormError> {
+                fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, #leptos_form_krate::FormError> {
                     todo!()
                 }
             }
@@ -862,7 +862,7 @@ mod test {
                 fn into_signal_type(self, config: Self::Config) -> Self::SignalType {
                     todo!()
                 }
-                fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, FormError> {
+                fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, #leptos_form_krate::FormError> {
                     todo!()
                 }
             }
@@ -971,7 +971,7 @@ mod test {
                 fn into_signal_type(self, config: Self::Config) -> Self::SignalType {
                     todo!()
                 }
-                fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, FormError> {
+                fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, #leptos_form_krate::FormError> {
                     todo!()
                 }
             }
