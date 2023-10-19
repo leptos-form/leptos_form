@@ -20,8 +20,10 @@ num-traits = "~0.2"
 paste = "~1"
 proc-macro2 = "1"
 quote = "1"
+serde = { version = "1", features = ["derive" ]}
 syn = { version = "2", features = ["fold", "full", "parsing"] }
+tracing = "0"
 thiserror = "1"
 typed-builder = "0.17.0"
-uuid = "1"
+uuid = { version = "1", features = ["serde"] }
 web-sys = "~0.3"

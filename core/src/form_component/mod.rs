@@ -4,15 +4,14 @@ pub use impls::*;
 
 use crate::*;
 use ::leptos::ev::Event;
-use ::leptos::html::*;
 use ::leptos::*;
 use ::web_sys::EventTarget;
 
 pub trait FormSignalType<El>: Sized {
-    type Config: Default;
-    type SignalType;
-    fn into_signal_type(self, config: Self::Config) -> Self::SignalType;
-    fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, FormError>;
+    type Config: Clone + Default;
+    type SignalType: Default + 'static;
+    fn into_signal_type(self, config: &Self::Config) -> Self::SignalType;
+    fn try_from_signal_type(signal_type: Self::SignalType, config: &Self::Config) -> Result<Self, FormError>;
 }
 pub trait FormComponent<T: 'static, El>: FormSignalType<El> {
     fn render(
@@ -35,10 +34,6 @@ pub struct RenderProps<T: 'static, RefAx, MutAx, Config = ()> {
     #[builder(default)]
     pub id: Option<Oco<'static, str>>,
     pub name: Oco<'static, str>,
-    /// the prefix used to create the `name` field
-    pub id_prefix: Option<Oco<'static, str>>,
-    /// the prefix used to create the `name` field
-    pub name_prefix: Option<Oco<'static, str>>,
     #[builder(default)]
     pub class: Option<Oco<'static, str>>,
     pub signal: RwSignal<T>,
@@ -69,33 +64,37 @@ pub fn setter<T: 'static, U>(
 }
 
 #[doc(hidden)]
-pub fn ref_ax_factory<T, U>(f: impl RefAccessor<T, U>) -> impl RefAccessor<T, U> {
-    f
+pub fn ref_ax_factory<T, U>(ref_ax: impl RefAccessor<T, U>) -> impl RefAccessor<T, U> {
+    ref_ax
 }
 
 #[doc(hidden)]
-pub fn mut_ax_factory<T, U>(f: impl MutAccessor<T, U>) -> impl MutAccessor<T, U> {
-    f
+pub fn mut_ax_factory<T, U>(mut_ax: impl MutAccessor<T, U>) -> impl MutAccessor<T, U> {
+    mut_ax
 }
 
 impl<T, U, F: Copy + Fn(&T) -> &U + 'static> RefAccessor<T, U> for F {}
 
 impl<T, U, F: Copy + Fn(&mut T) -> &mut U + 'static> MutAccessor<T, U> for F {}
 
-impl<U> FormSignalType<Input> for Option<U>
+impl<T: DefaultHtmlElement> DefaultHtmlElement for Option<T> {
+    type El = T::El;
+}
+
+impl<U, El> FormSignalType<El> for Option<U>
 where
-    U: FormSignalType<Input>,
+    U: FormSignalType<El>,
     U::SignalType: Default + Eq,
 {
     type Config = U::Config;
     type SignalType = U::SignalType;
-    fn into_signal_type(self, config: Self::Config) -> Self::SignalType {
+    fn into_signal_type(self, config: &Self::Config) -> Self::SignalType {
         match self {
             Some(value) => U::into_signal_type(value, config),
             None => U::SignalType::default(),
         }
     }
-    fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, FormError> {
+    fn try_from_signal_type(signal_type: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
         match signal_type == U::SignalType::default() {
             true => Ok(None),
             false => Ok(Some(U::try_from_signal_type(signal_type, config)?)),
@@ -103,9 +102,9 @@ where
     }
 }
 
-impl<T: 'static, U> FormComponent<T, Input> for Option<U>
+impl<T: 'static, El, U> FormComponent<T, El> for Option<U>
 where
-    U: FormComponent<T, Input>,
+    U: FormComponent<T, El>,
     U::SignalType: Default + Eq,
 {
     fn render(

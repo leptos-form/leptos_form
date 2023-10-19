@@ -17,10 +17,10 @@ macro_rules! str_impl {
         impl FormSignalType<HtmlElement<$el>> for $ty {
             type Config = ();
             type SignalType = String;
-            fn into_signal_type(self, _: Self::Config) -> Self::SignalType {
+            fn into_signal_type(self, _: &Self::Config) -> Self::SignalType {
                 self.into()
             }
-            fn try_from_signal_type(signal_type: Self::SignalType, _: Self::Config) -> Result<Self, FormError> {
+            fn try_from_signal_type(signal_type: Self::SignalType, _: &Self::Config) -> Result<Self, FormError> {
                 Ok(str_impl!(@from signal_type $($from_signal_type)?))
             }
         }

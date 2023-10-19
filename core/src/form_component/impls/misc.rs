@@ -13,10 +13,10 @@ impl DefaultHtmlElement for ::uuid::Uuid {
 impl FormSignalType<HtmlElement<Input>> for ::uuid::Uuid {
     type Config = ();
     type SignalType = String;
-    fn into_signal_type(self, _: Self::Config) -> Self::SignalType {
+    fn into_signal_type(self, _: &Self::Config) -> Self::SignalType {
         self.to_string()
     }
-    fn try_from_signal_type(signal_type: Self::SignalType, _: Self::Config) -> Result<Self, FormError> {
+    fn try_from_signal_type(signal_type: Self::SignalType, _: &Self::Config) -> Result<Self, FormError> {
         use std::str::FromStr;
         ::uuid::Uuid::from_str(&signal_type).map_err(FormError::parse)
     }
@@ -75,7 +75,7 @@ cfg_if! { if #[cfg(feature = "chrono")] {
             impl FormSignalType<HtmlElement<Input>> for $ty {
                 type Config = ChronoConfig;
                 type SignalType = String;
-                fn into_signal_type(self, config: Self::Config) -> Self::SignalType {
+                fn into_signal_type(self, config: &Self::Config) -> Self::SignalType {
                     self.format(config.format).to_string()
                 }
 
@@ -104,22 +104,22 @@ cfg_if! { if #[cfg(feature = "chrono")] {
 
     chrono_impl!(
         NaiveDateTime {
-            fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, FormError> {
+            fn try_from_signal_type(signal_type: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
                 Self::parse_from_str(&signal_type, config.format).map_err(FormError::parse)
             }
         },
         DateTime<FixedOffset> {
-            fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, FormError> {
+            fn try_from_signal_type(signal_type: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
                 DateTime::parse_from_str(&signal_type, config.format).map_err(FormError::parse)
             }
         },
         DateTime<Utc> {
-            fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, FormError> {
+            fn try_from_signal_type(signal_type: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
                 DateTime::parse_from_str(&signal_type, config.format).map(|x| x.with_timezone(&Utc)).map_err(FormError::parse)
             }
         },
         DateTime<Local> {
-            fn try_from_signal_type(signal_type: Self::SignalType, config: Self::Config) -> Result<Self, FormError> {
+            fn try_from_signal_type(signal_type: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
                 DateTime::parse_from_str(&signal_type, config.format).map(|x| x.with_timezone(&Local)).map_err(FormError::parse)
             }
         },

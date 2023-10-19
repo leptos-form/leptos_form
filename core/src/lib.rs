@@ -27,18 +27,23 @@ impl FormError {
     }
 }
 
-pub fn format_form_id(id_prefix: Option<&Oco<'_, str>>, id: &'static str) -> Oco<'static, str> {
+pub fn format_form_id(id_prefix: Option<&Oco<'_, str>>, id: impl Into<Oco<'static, str>>) -> Oco<'static, str> {
+    let id = id.into();
     match id_prefix {
-        None => Oco::Borrowed(id),
-        Some(prefix) if prefix == "" => Oco::Borrowed(id),
+        None => id,
+        Some(prefix) if prefix == "" => id,
         Some(prefix) => Oco::Owned(format!("{prefix}-{id}")),
     }
 }
 
-pub fn format_form_name(name_prefix: Option<&Oco<'_, str>>, field_name: &'static str) -> Oco<'static, str> {
+pub fn format_form_name(
+    name_prefix: Option<&Oco<'_, str>>,
+    field_name: impl Into<Oco<'static, str>>,
+) -> Oco<'static, str> {
+    let field_name = field_name.into();
     match name_prefix {
-        None => Oco::Borrowed(field_name),
-        Some(prefix) if prefix == "" => Oco::Borrowed(field_name),
+        None => field_name,
+        Some(prefix) if prefix == "" => field_name,
         Some(prefix) => Oco::Owned(format!("{prefix}[{field_name}]")),
     }
 }
