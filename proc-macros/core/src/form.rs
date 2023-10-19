@@ -288,7 +288,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream> {
                     let #build_props_ident = #leptos_form_krate::RenderProps::builder()
                         .id(#field_id_ident.clone())
                         .name(#field_name_ident.clone())
-                        #(.class(#class))*
+                        #(.class(Oco::Borrowed(#class)))*
                         .signal(#props_ident.signal)
                         .ref_ax(#leptos_form_krate::ref_ax_factory(move |t: &#signal_ty_param| &(#props_ident.ref_ax)(t).#field_ax))
                         .mut_ax(#leptos_form_krate::mut_ax_factory(move |t: &mut #signal_ty_param| &mut (#props_ident.mut_ax)(t).#field_ax))
@@ -979,7 +979,7 @@ mod test {
                     let _abc_123_props = #leptos_form_krate::RenderProps::builder()
                         .id(_abc_123_id.clone())
                         .name(_abc_123_name.clone())
-                        .class("hi")
+                        .class(Oco::Borrowed("hi"))
                         .signal(props.signal)
                         .ref_ax(#leptos_form_krate::ref_ax_factory(move |t: &__SignalType| &(props.ref_ax)(t).abc_123))
                         .mut_ax(#leptos_form_krate::mut_ax_factory(move |t: &mut __SignalType| &mut (props.mut_ax)(t).abc_123))
