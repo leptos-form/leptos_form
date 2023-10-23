@@ -78,28 +78,28 @@ impl<U: DefaultHtmlElement> DefaultHtmlElement for Vec<U> {
     type El = Vec<U::El>;
 }
 
-impl<U, El> FormSignalType<Vec<El>> for Vec<U>
+impl<U, El> FormField<Vec<El>> for Vec<U>
 where
-    U: FormSignalType<El>,
-    <U as FormSignalType<El>>::SignalType: Clone,
+    U: FormField<El>,
+    <U as FormField<El>>::Signal: Clone,
 {
-    type Config = VecConfig<<U as FormSignalType<El>>::Config>;
-    type SignalType = RwSignal<Vec<<U as FormSignalType<El>>::SignalType>>;
+    type Config = VecConfig<<U as FormField<El>>::Config>;
+    type Signal = RwSignal<Vec<<U as FormField<El>>::Signal>>;
 
-    fn default_signal() -> Self::SignalType {
+    fn default_signal() -> Self::Signal {
         RwSignal::new(vec![])
     }
-    fn is_default_value(signal: &Self::SignalType) -> bool {
+    fn is_default_value(signal: &Self::Signal) -> bool {
         signal.with(|items| items.is_empty())
     }
-    fn into_signal_type(self, config: &Self::Config) -> Self::SignalType {
-        RwSignal::new(self.into_iter().map(|u| u.into_signal_type(&config.item)).collect())
+    fn into_signal(self, config: &Self::Config) -> Self::Signal {
+        RwSignal::new(self.into_iter().map(|u| u.into_signal(&config.item)).collect())
     }
-    fn try_from_signal_type(signal_type: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
-        signal_type
+    fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError> {
+        signal
             .get()
             .into_iter()
-            .map(|inner_singal_type| U::try_from_signal_type(inner_singal_type, &config.item))
+            .map(|inner_singal_type| U::try_from_signal(inner_singal_type, &config.item))
             .collect()
     }
 }
@@ -107,9 +107,9 @@ where
 impl<U, El> FormComponent<Vec<El>> for Vec<U>
 where
     U: FormComponent<El>,
-    <U as FormSignalType<El>>::SignalType: Clone,
+    <U as FormField<El>>::Signal: Clone,
 {
-    fn render(props: RenderProps<Self::SignalType, Self::Config>) -> impl IntoView {
+    fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
         let vec_config = &props.config;
         let (min_items, max_items) = vec_config.items.split();
 

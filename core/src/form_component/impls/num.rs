@@ -8,26 +8,26 @@ macro_rules! int_impl {
             type El = HtmlElement<Input>;
         }
 
-        impl FormSignalType<HtmlElement<Input>> for $ty {
+        impl FormField<HtmlElement<Input>> for $ty {
             type Config = ();
-            type SignalType = RwSignal<String>;
+            type Signal = RwSignal<String>;
 
-            fn default_signal() -> Self::SignalType {
+            fn default_signal() -> Self::Signal {
                 RwSignal::new(Default::default())
             }
-            fn is_default_value(signal: &Self::SignalType) -> bool {
+            fn is_default_value(signal: &Self::Signal) -> bool {
                 signal.with(|value| value.is_empty())
             }
-            fn into_signal_type(self, _: &Self::Config) -> Self::SignalType {
+            fn into_signal(self, _: &Self::Config) -> Self::Signal {
                 RwSignal::new(self.to_string())
             }
-            fn try_from_signal_type(signal_type: Self::SignalType, _: &Self::Config) -> Result<Self, FormError> {
-                signal_type.get().parse().map_err(FormError::parse)
+            fn try_from_signal(signal: Self::Signal, _: &Self::Config) -> Result<Self, FormError> {
+                signal.get().parse().map_err(FormError::parse)
             }
         }
 
         impl FormComponent<HtmlElement<Input>> for $ty {
-            fn render(props: RenderProps<Self::SignalType, Self::Config>) -> impl IntoView {
+            fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
                 props.signal.with(|value| {
                     view! {
                         <input

@@ -10,28 +10,28 @@ impl DefaultHtmlElement for ::uuid::Uuid {
 }
 
 #[cfg(feature = "uuid")]
-impl FormSignalType<HtmlElement<Input>> for ::uuid::Uuid {
+impl FormField<HtmlElement<Input>> for ::uuid::Uuid {
     type Config = ();
-    type SignalType = RwSignal<String>;
+    type Signal = RwSignal<String>;
 
-    fn default_signal() -> Self::SignalType {
+    fn default_signal() -> Self::Signal {
         RwSignal::new(Default::default())
     }
-    fn is_default_value(signal: &Self::SignalType) -> bool {
+    fn is_default_value(signal: &Self::Signal) -> bool {
         signal.with(|value| value.is_empty())
     }
-    fn into_signal_type(self, _: &Self::Config) -> Self::SignalType {
+    fn into_signal(self, _: &Self::Config) -> Self::Signal {
         RwSignal::new(self.to_string())
     }
-    fn try_from_signal_type(signal_type: Self::SignalType, _: &Self::Config) -> Result<Self, FormError> {
+    fn try_from_signal(signal: Self::Signal, _: &Self::Config) -> Result<Self, FormError> {
         use std::str::FromStr;
-        signal_type.with(|value| ::uuid::Uuid::from_str(value).map_err(FormError::parse))
+        signal.with(|value| ::uuid::Uuid::from_str(value).map_err(FormError::parse))
     }
 }
 
 #[cfg(feature = "uuid")]
 impl FormComponent<HtmlElement<Input>> for ::uuid::Uuid {
-    fn render(props: RenderProps<Self::SignalType, Self::Config>) -> impl IntoView {
+    fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
         props.signal.with(|value| {
             view! {
                 <input
@@ -71,17 +71,17 @@ cfg_if! { if #[cfg(feature = "chrono")] {
                 type El = HtmlElement<Input>;
             }
 
-            impl FormSignalType<HtmlElement<Input>> for $ty {
+            impl FormField<HtmlElement<Input>> for $ty {
                 type Config = ChronoConfig;
-                type SignalType = RwSignal<String>;
+                type Signal = RwSignal<String>;
 
-                fn default_signal() -> Self::SignalType {
+                fn default_signal() -> Self::Signal {
                     RwSignal::new(Default::default())
                 }
-                fn is_default_value(signal: &Self::SignalType) -> bool {
+                fn is_default_value(signal: &Self::Signal) -> bool {
                     signal.with(|value| value.is_empty())
                 }
-                fn into_signal_type(self, config: &Self::Config) -> Self::SignalType {
+                fn into_signal(self, config: &Self::Config) -> Self::Signal {
                     RwSignal::new(self.format(config.format).to_string())
                 }
 
@@ -89,7 +89,7 @@ cfg_if! { if #[cfg(feature = "chrono")] {
             }
 
             impl FormComponent<HtmlElement<Input>> for $ty {
-                fn render(props: RenderProps<Self::SignalType, Self::Config>) -> impl IntoView {
+                fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
                     props.signal.with(|value| {
                         view! {
                             <input
@@ -109,22 +109,22 @@ cfg_if! { if #[cfg(feature = "chrono")] {
 
     chrono_impl!(
         NaiveDateTime {
-            fn try_from_signal_type(signal: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
+            fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError> {
                 signal.with(|value| Self::parse_from_str(value, config.format).map_err(FormError::parse))
             }
         },
         DateTime<FixedOffset> {
-            fn try_from_signal_type(signal: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
+            fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError> {
                 signal.with(|value| DateTime::parse_from_str(value, config.format).map_err(FormError::parse))
             }
         },
         DateTime<Utc> {
-            fn try_from_signal_type(signal: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
+            fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError> {
                 signal.with(|value| DateTime::parse_from_str(value, config.format).map(|x| x.with_timezone(&Utc)).map_err(FormError::parse))
             }
         },
         DateTime<Local> {
-            fn try_from_signal_type(signal: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
+            fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError> {
                 signal.with(|value| DateTime::parse_from_str(value, config.format).map(|x| x.with_timezone(&Local)).map_err(FormError::parse))
             }
         },
