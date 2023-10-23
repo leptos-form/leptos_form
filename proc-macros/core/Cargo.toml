@@ -6,6 +6,7 @@ authors.workspace = true
 
 [dependencies]
 convert_case.workspace = true
+darling.workspace = true
 derive_more.workspace = true
 itertools.workspace = true
 proc-macro2.workspace = true

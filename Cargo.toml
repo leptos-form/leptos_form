@@ -11,7 +11,9 @@ authors = ["Trey Lowerison <19714082+tlowerison@users.noreply.github.com>"]
 cfg-if = "1"
 chrono = { version = "0", features = ["std"] }
 convert_case = "~0.6"
+darling = "0.20"
 derive_more = "~0.99"
+derivative = "2"
 inner = "0"
 itertools = "~0.11"
 leptos = "~0.5"
@@ -21,7 +23,7 @@ paste = "~1"
 proc-macro2 = "1"
 quote = "1"
 serde = { version = "1", features = ["derive" ]}
-syn = { version = "2", features = ["fold", "full", "parsing"] }
+syn = { version = "2", features = ["extra-traits", "full", "parsing"] }
 tracing = "0"
 thiserror = "1"
 typed-builder = "0.17.0"

@@ -13,6 +13,7 @@ pub trait FormSignalType<El>: Sized {
     fn into_signal_type(self, config: &Self::Config) -> Self::SignalType;
     fn try_from_signal_type(signal_type: Self::SignalType, config: &Self::Config) -> Result<Self, FormError>;
 }
+
 pub trait FormComponent<T: 'static, El>: FormSignalType<El> {
     fn render(
         props: RenderProps<
