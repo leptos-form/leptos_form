@@ -198,10 +198,11 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         data,
     } = form_opts;
 
+    let config_var_ident = format_ident!("config");
+    let props_ident = format_ident!("props");
     let signal_ident = format_ident!("__{ident}SignalType");
     let config_ident = format_ident!("__{ident}Config");
     let err_ident = format_ident!("__{ident}Errors");
-    let config_var_ident = format_ident!("config");
 
     let is_internal = internal.unwrap_or_default();
 
@@ -228,7 +229,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
     let fields = data.take_struct().unwrap();
 
-    let (field_groups, field_axs, field_tys, field_el_tys, signal_fields, configs): (
+    let (field_groups, field_axs, field_tys, field_el_tys, configs, signal_field_idents): (
         Vec<_>,
         Vec<_>,
         Vec<_>,
@@ -248,15 +249,6 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             let field_ty = &field.ty;
             let field_el_ty = field_el_ty(&leptos_form_krate, field);
 
-            let signal_field = syn::Field {
-                attrs: vec![],
-                vis: syn::Visibility::Public(Default::default()),
-                mutability: syn::FieldMutability::None,
-                ident: field.ident.clone(),
-                colon_token: Default::default(),
-                ty: signal_field_ty(&leptos_krate, &leptos_form_krate, field, &field_el_ty)?,
-            };
-
             let config = field.config.clone().unwrap_or_else(|| {
                 parse2(quote!(
                     <#field_ty as #leptos_form_krate::FormSignalType<#field_el_ty>>::Config::default()
@@ -264,84 +256,19 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 .unwrap()
             });
 
-            Ok((field.group, field_ax, field_ty, field_el_ty, signal_field, config))
+            let signal_field_ident = if let Some(ident) = field.ident.clone() {
+                ident
+            } else {
+                format_ident!("_{i}")
+            };
+
+            Ok((field.group, field_ax, field_ty, field_el_ty, config, signal_field_ident))
         })
         .collect::<Result<Vec<_>, Error>>()?
         .into_iter()
         .multiunzip();
 
     let tuple_err_fields = fields.iter().map(|_| quote!(pub Option<#leptos_form_krate::FormError>));
-
-    let (type_defs, config_value, signal_constructor, try_constructor) = match fields.style {
-        darling::ast::Style::Struct => (
-            quote!(
-                #[derive(Clone, Debug, Default)]
-                #vis struct #signal_ident {
-                    #(#signal_fields,)*
-                }
-
-                #[derive(Clone, Debug, Default)]
-                pub struct #config_ident {
-                    #(pub #field_axs: <#field_tys as #leptos_form_krate::FormSignalType<#field_el_tys>>::Config,)*
-                }
-
-                #[derive(Clone, Debug, Default)]
-                pub struct #err_ident {
-                    #(pub #field_axs: Option<#leptos_form_krate::FormError>,)*
-                }
-            ),
-            quote!(
-                #config_ident {
-                    #(#field_axs: #configs,)*
-                }
-            ),
-            quote!(
-                #signal_ident {
-                    #(#field_axs: <#field_tys as #leptos_form_krate::FormSignalType<#field_el_tys>>::into_signal_type(self.#field_axs, &#config_var_ident.#field_axs) ,)*
-                }
-            ),
-            quote!(
-                Ok(#ident {
-                    #(#field_axs: <#field_tys as #leptos_form_krate::FormSignalType<#field_el_tys>>::try_from_signal_type(signal_type.#field_axs, &#config_var_ident.#field_axs)? ,)*
-                })
-            ),
-        ),
-        darling::ast::Style::Tuple => (
-            quote!(
-                #[derive(Clone, Debug, Default)]
-                #vis struct #signal_ident(
-                    #(#signal_fields,)*
-                );
-
-                #[derive(Clone, Debug, Default)]
-                pub struct #config_ident(
-                    #(pub <#field_tys as #leptos_form_krate::FormSignalType<#field_el_tys>>::Config,)*
-                );
-
-                #[derive(Clone, Debug, Default)]
-                pub struct #err_ident(
-                    #(#tuple_err_fields,)*
-                );
-            ),
-            quote!(
-                #config_ident(#(#configs,)*)
-            ),
-            quote!(
-                #signal_ident(
-                    #(<#field_tys as #leptos_form_krate::FormSignalType<#field_el_tys>>::into_signal_type(self.#field_axs, &#config_var_ident.#field_axs) ,)*
-                )
-            ),
-            quote!(
-                Ok(#ident(
-                    #(<#field_tys as #leptos_form_krate::FormSignalType<#field_el_tys>>::try_from_signal_type(signal_type.#field_axs, &#config_var_ident.#field_axs)? ,)*
-                ))
-            ),
-        ),
-        darling::ast::Style::Unit => return Err(Error::new(Span::call_site(), "Form cannot be derived on unit types")),
-    };
-
-    let props_ident = format_ident!("props");
-    let signal_ty_param = format_ident!("__SignalType");
 
     let (build_props_idents, field_id_idents, field_view_idents, build_props): (Vec<_>, Vec<_>, Vec<_>, Vec<_>) = fields
         .iter()
@@ -388,13 +315,11 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                         .id(#field_id_ident.clone())
                         .name(#field_name_ident.clone())
                         #(.class(Oco::Borrowed(#class)))*
-                        .signal(#props_ident.signal)
-                        .ref_ax(#leptos_form_krate::ref_ax_factory(move |t: &#signal_ty_param| &(#props_ident.ref_ax)(t).#field_ax))
-                        .mut_ax(#leptos_form_krate::mut_ax_factory(move |t: &mut #signal_ty_param| &mut (#props_ident.mut_ax)(t).#field_ax))
+                        .signal(#props_ident.signal.#field_ax.clone())
                         .config(#config)
                         .build();
 
-                    let #field_view_ident = <#field_ty as #leptos_form_krate::FormComponent<#signal_ty_param, #field_el_ty>>::render(#build_props_ident);
+                    let #field_view_ident = <#field_ty as #leptos_form_krate::FormComponent<#field_el_ty>>::render(#build_props_ident);
                 ),
             )
         })
@@ -440,74 +365,90 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         None => quote!(#(#wrapped_field_views)*),
     };
 
-    let component_tokens = component_ident.map(|component_ident| {
-        let id = form_id.iter();
-        let class = form_class.iter();
-        let submit = submit.iter();
+    let component_tokens = component_ident
+        .map(|component_ident| {
+            let id = form_id.iter();
+            let class = form_class.iter();
+            let submit = submit.iter();
 
-        let (tag_import, action_def, open_tag, close_tag) = match action {
-            Some(Action::Path(action)) => (
-                quote!(use #leptos_router_krate::ActionForm;),
-                Some(quote!(let action = #leptos_krate::create_server_action::<#action>();)),
-                quote!(<ActionForm action=action #(id=#id)* #(class=#class)*>),
-                quote!(</ActionForm>),
-            ),
-            Some(Action::Url(action)) => (
-                quote!(use #leptos_router_krate::Form;),
-                None,
-                quote!(<Form action=#action #(id=#id)* #(class=#class)*>),
-                quote!(</Form>),
-            ),
-            None => return Err(Error::new(Span::call_site(), "component forms must specify an action attribute")),
-        };
-        let action_def = action_def.into_iter();
+            let (tag_import, action_def, open_tag, close_tag) = match action {
+                Some(Action::Path(action)) => (
+                    quote!(use #leptos_router_krate::ActionForm;),
+                    Some(quote!(let action = #leptos_krate::create_server_action::<#action>();)),
+                    quote!(<ActionForm action=action #(id=#id)* #(class=#class)*>),
+                    quote!(</ActionForm>),
+                ),
+                Some(Action::Url(action)) => (
+                    quote!(use #leptos_router_krate::Form;),
+                    None,
+                    quote!(<Form action=#action #(id=#id)* #(class=#class)*>),
+                    quote!(</Form>),
+                ),
+                None => {
+                    return Err(Error::new(
+                        Span::call_site(),
+                        "component forms must specify an action attribute",
+                    ))
+                }
+            };
+            let action_def = action_def.into_iter();
 
-        let mod_ident = format_ident!("{}", format!("leptos_form_component_{ident}").to_case(Case::Snake));
+            let mod_ident = format_ident!("{}", format!("leptos_form_component_{ident}").to_case(Case::Snake));
 
-        let pound = "#".parse::<TokenStream>().unwrap();
-        let tokens = quote!(
-            #vis use #mod_ident::*;
+            let pound = "#".parse::<TokenStream>().unwrap();
+            let tokens = quote!(
+                #vis use #mod_ident::*;
 
-            #[allow(unused_imports)]
-            mod #mod_ident {
-                use super::*;
-                use #leptos_form_krate::FormSignalType;
-                use #leptos_krate::IntoView;
-                #tag_import
+                #[allow(unused_imports)]
+                mod #mod_ident {
+                    use super::*;
+                    use #leptos_form_krate::FormSignalType;
+                    use #leptos_krate::IntoView;
+                    #tag_import
 
-                #pound[#leptos_krate::#component_ident]
-                #vis fn #ident(initial: #ident) -> impl IntoView {
-                    #(#action_def)*
+                    #pound[#leptos_krate::#component_ident]
+                    #vis fn #ident(initial: #ident) -> impl IntoView {
+                        #(#action_def)*
 
-                    let config = #config_value;
+                        let config = #config_ident { #(#field_axs: #configs,)* };
 
-                    let signal = #leptos_krate::create_rw_signal(initial.into_signal_type(&config));
-                    let props = #leptos_form_krate::RenderProps::builder()
-                        .id(None)
-                        .name("")
-                        .signal(signal)
-                        .ref_ax(#leptos_form_krate::ref_ax_factory(|x| x))
-                        .mut_ax(#leptos_form_krate::mut_ax_factory(|x| x))
-                        .config(config)
-                        .build();
+                        let props = #leptos_form_krate::RenderProps::builder()
+                            .id(None)
+                            .name("")
+                            .signal(initial.into_signal_type(&config))
+                            .config(config)
+                            .build();
 
-                    let view = <#ident as #leptos_form_krate::FormComponent<#signal_ident, #leptos_krate::View>>::render(props);
+                        let view = <#ident as #leptos_form_krate::FormComponent<#leptos_krate::View>>::render(props);
 
-                    #leptos_krate::view! {
-                        #open_tag
-                            {view}
-                            #({#leptos_krate::#submit})*
-                        #close_tag
+                        #leptos_krate::view! {
+                            #open_tag
+                                {view}
+                                #({#leptos_krate::#submit})*
+                            #close_tag
+                        }
                     }
                 }
-            }
-        );
-        Ok(tokens)
-    })
-    .transpose()?;
+            );
+            Ok(tokens)
+        })
+        .transpose()?;
 
     let tokens = quote!(
-        #type_defs
+        #[derive(Clone, Debug)]
+        pub struct #signal_ident {
+            #(pub #signal_field_idents: <#field_tys as #leptos_form_krate::FormSignalType<#field_el_tys>>::SignalType,)*
+        }
+
+        #[derive(Clone, Debug, Default)]
+        pub struct #config_ident {
+            #(pub #signal_field_idents: <#field_tys as #leptos_form_krate::FormSignalType<#field_el_tys>>::Config,)*
+        }
+
+        #[derive(Clone, Debug, Default)]
+        pub struct #err_ident {
+            #(pub #signal_field_idents: Option<#leptos_form_krate::FormError>,)*
+        }
 
         impl ::core::convert::AsRef<#signal_ident> for #signal_ident {
             fn as_ref(&self) -> &Self {
@@ -528,22 +469,32 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         impl #leptos_form_krate::FormSignalType<#leptos_krate::View> for #ident {
             type Config = #config_ident;
             type SignalType = #signal_ident;
+
+            fn default_signal() -> Self::SignalType {
+                #signal_ident {
+                    #(#field_axs: <#field_tys as #leptos_form_krate::FormSignalType<#field_el_tys>>::default_signal() ,)*
+                }
+            }
+            fn is_default_value(signal: &Self::SignalType) -> bool {
+                #(
+                    <#field_tys as #leptos_form_krate::FormSignalType<#field_el_tys>>::is_default_value(&signal.#field_axs)
+                )&&*
+            }
             fn into_signal_type(self, #config_var_ident: &Self::Config) -> Self::SignalType {
-                #signal_constructor
+                #signal_ident {
+                    #(#field_axs: <#field_tys as #leptos_form_krate::FormSignalType<#field_el_tys>>::into_signal_type(self.#field_axs, &#config_var_ident.#field_axs) ,)*
+                }
             }
             fn try_from_signal_type(signal_type: Self::SignalType, #config_var_ident: &Self::Config) -> Result<Self, #leptos_form_krate::FormError> {
-                #try_constructor
+                Ok(#ident {
+                    #(#field_axs: <#field_tys as #leptos_form_krate::FormSignalType<#field_el_tys>>::try_from_signal_type(signal_type.#field_axs, &#config_var_ident.#field_axs)? ,)*
+                })
             }
         }
 
-        impl<#signal_ty_param: 'static> #leptos_form_krate::FormComponent<#signal_ty_param, #leptos_krate::View> for #ident {
+        impl #leptos_form_krate::FormComponent<#leptos_krate::View> for #ident {
             #[allow(unused_imports)]
-            fn render(#props_ident: #leptos_form_krate::RenderProps<
-                #signal_ty_param,
-                impl #leptos_form_krate::RefAccessor<#signal_ty_param, Self::SignalType>,
-                impl #leptos_form_krate::MutAccessor<#signal_ty_param, Self::SignalType>,
-                Self::Config,
-            >) -> impl #leptos_krate::IntoView {
+            fn render(#props_ident: #leptos_form_krate::RenderProps<Self::SignalType, Self::Config>) -> impl #leptos_krate::IntoView {
                 use #leptos_krate::{IntoAttribute, IntoView};
 
                 #(#build_props)*
@@ -834,14 +785,9 @@ mod test {
                 }
             }
 
-            impl<__SignalType: 'static> #leptos_form_krate::FormComponent<__SignalType, #leptos_krate::View> for MyFormData {
+            impl<__SignalType: 'static> #leptos_form_krate::FormComponent<#leptos_krate::View> for MyFormData {
                 #[allow(unused_imports)]
-                fn render(props: #leptos_form_krate::RenderProps<
-                    __SignalType,
-                    impl #leptos_form_krate::RefAccessor<__SignalType, Self::SignalType>,
-                    impl #leptos_form_krate::MutAccessor<__SignalType, Self::SignalType>,
-                    Self::Config,
-                >) -> impl #leptos_krate::IntoView {
+                fn render(props: #leptos_form_krate::RenderProps<Self::SignalType, Self::Config>) -> impl #leptos_krate::IntoView {
                     use #leptos_krate::{IntoAttribute, IntoView};
 
                     let _id_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "id");
@@ -849,48 +795,40 @@ mod test {
                     let _id_props = #leptos_form_krate::RenderProps::builder()
                         .id(_id_id.clone())
                         .name(_id_name.clone())
-                        .signal(props.signal)
-                        .ref_ax(#leptos_form_krate::ref_ax_factory(move |t: &__SignalType| &(props.ref_ax)(t).id))
-                        .mut_ax(#leptos_form_krate::mut_ax_factory(move |t: &mut __SignalType| &mut (props.mut_ax)(t).id))
+                        .signal(props.signal.id.clone())
                         .config(<Uuid as #leptos_form_krate::FormSignalType<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
                         .build();
-                    let _id_view = <Uuid as #leptos_form_krate::FormComponent<__SignalType, <Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_id_props);
+                    let _id_view = <Uuid as #leptos_form_krate::FormComponent<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_id_props);
 
                     let _slug_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "slug");
                     let _slug_name = #leptos_form_krate::format_form_name(Some(&props.name), "slug");
                     let _slug_props = #leptos_form_krate::RenderProps::builder()
                         .id(_slug_id.clone())
                         .name(_slug_name.clone())
-                        .signal(props.signal)
-                        .ref_ax(#leptos_form_krate::ref_ax_factory(move |t: &__SignalType| &(props.ref_ax)(t).slug))
-                        .mut_ax(#leptos_form_krate::mut_ax_factory(move |t: &mut __SignalType| &mut (props.mut_ax)(t).slug))
+                        .signal(props.signal.slug.clone())
                         .config(<String as #leptos_form_krate::FormSignalType<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
                         .build();
-                    let _slug_view = <String as #leptos_form_krate::FormComponent<__SignalType, <String as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_slug_props);
+                    let _slug_view = <String as #leptos_form_krate::FormComponent<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_slug_props);
 
                     let _created_at_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "created-at");
                     let _created_at_name = #leptos_form_krate::format_form_name(Some(&props.name), "created_at");
                     let _created_at_props = #leptos_form_krate::RenderProps::builder()
                         .id(_created_at_id.clone())
                         .name(_created_at_name.clone())
-                        .signal(props.signal)
-                        .ref_ax(#leptos_form_krate::ref_ax_factory(move |t: &__SignalType| &(props.ref_ax)(t).created_at))
-                        .mut_ax(#leptos_form_krate::mut_ax_factory(move |t: &mut __SignalType| &mut (props.mut_ax)(t).created_at))
+                        .signal(props.signal.created_at)
                         .config(<chrono::NaiveDateTime as #leptos_form_krate::FormSignalType<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
                         .build();
-                    let _created_at_view = <chrono::NaiveDateTime as #leptos_form_krate::FormComponent<__SignalType, <chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_created_at_props);
+                    let _created_at_view = <chrono::NaiveDateTime as #leptos_form_krate::FormComponent<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_created_at_props);
 
                     let _count_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "count");
                     let _count_name = #leptos_form_krate::format_form_name(Some(&props.name), "count");
                     let _count_props = #leptos_form_krate::RenderProps::builder()
                         .id(_count_id.clone())
                         .name(_count_name.clone())
-                        .signal(props.signal)
-                        .ref_ax(#leptos_form_krate::ref_ax_factory(move |t: &__SignalType| &(props.ref_ax)(t).count))
-                        .mut_ax(#leptos_form_krate::mut_ax_factory(move |t: &mut __SignalType| &mut (props.mut_ax)(t).count))
+                        .signal(props.signal.count)
                         .config(<u8 as #leptos_form_krate::FormSignalType<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
                         .build();
-                    let _count_view = <u8 as #leptos_form_krate::FormComponent<__SignalType, <u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_count_props);
+                    let _count_view = <u8 as #leptos_form_krate::FormComponent<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_count_props);
 
                     #leptos_krate::view! {
                         <label for={_id_id}>
@@ -988,7 +926,7 @@ mod test {
                 }
             }
 
-            impl<__SignalType: 'static> #leptos_form_krate::FormComponent<__SignalType, #leptos_krate::View> for MyFormData {
+            impl<__SignalType: 'static> #leptos_form_krate::FormComponent<#leptos_krate::View> for MyFormData {
                 #[allow(unused_imports)]
                 fn render(props: #leptos_form_krate::RenderProps<
                     __SignalType,
@@ -1004,24 +942,20 @@ mod test {
                         .id(_abc_123_id.clone())
                         .name(_abc_123_name.clone())
                         .class(Oco::Borrowed("hi"))
-                        .signal(props.signal)
-                        .ref_ax(#leptos_form_krate::ref_ax_factory(move |t: &__SignalType| &(props.ref_ax)(t).abc_123))
-                        .mut_ax(#leptos_form_krate::mut_ax_factory(move |t: &mut __SignalType| &mut (props.mut_ax)(t).abc_123))
+                        .signal(props.signal.abc_123)
                         .config(<Uuid as #leptos_form_krate::FormSignalType<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
                         .build();
-                    let _abc_123_view = <Uuid as #leptos_form_krate::FormComponent<__SignalType, <Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_abc_123_props);
+                    let _abc_123_view = <Uuid as #leptos_form_krate::FormComponent<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_abc_123_props);
 
                     let _zz_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "zz");
                     let _zz_name = #leptos_form_krate::format_form_name(Some(&props.name), "zz");
                     let _zz_props = #leptos_form_krate::RenderProps::builder()
                         .id(_zz_id.clone())
                         .name(_zz_name.clone())
-                        .signal(props.signal)
-                        .ref_ax(#leptos_form_krate::ref_ax_factory(move |t: &__SignalType| &(props.ref_ax)(t).zz))
-                        .mut_ax(#leptos_form_krate::mut_ax_factory(move |t: &mut __SignalType| &mut (props.mut_ax)(t).zz))
+                        .signal(props.signal.zz)
                         .config(<u8 as #leptos_form_krate::FormSignalType<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
                         .build();
-                    let _zz_view = <u8 as #leptos_form_krate::FormComponent<__SignalType, <u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_zz_props);
+                    let _zz_view = <u8 as #leptos_form_krate::FormComponent<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_zz_props);
 
                     #leptos_krate::view! {
                         <label for={_abc_123_id} class="test">
@@ -1103,7 +1037,7 @@ mod test {
                 }
             }
 
-            impl<__SignalType: 'static> #leptos_form_krate::FormComponent<__SignalType, #leptos_krate::View> for MyFormData {
+            impl<__SignalType: 'static> #leptos_form_krate::FormComponent<#leptos_krate::View> for MyFormData {
                 #[allow(unused_imports)]
                 fn render(props: #leptos_form_krate::RenderProps<
                     __SignalType,
@@ -1118,12 +1052,10 @@ mod test {
                     let _ayo_props = #leptos_form_krate::RenderProps::builder()
                         .id(_ayo_id.clone())
                         .name(_ayo_name.clone())
-                        .signal(props.signal)
-                        .ref_ax(#leptos_form_krate::ref_ax_factory(move |t: &__SignalType| &(props.ref_ax)(t).ayo))
-                        .mut_ax(#leptos_form_krate::mut_ax_factory(move |t: &mut __SignalType| &mut (props.mut_ax)(t).ayo))
+                        .signal(props.signal.ayo)
                         .config(<u8 as #leptos_form_krate::FormSignalType<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
                         .build();
-                    let _ayo_view = <u8 as #leptos_form_krate::FormComponent<__SignalType, <u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_ayo_props);
+                    let _ayo_view = <u8 as #leptos_form_krate::FormComponent<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_ayo_props);
 
                     #leptos_krate::view! {
                         <label for={_ayo_id}>
@@ -1154,11 +1086,9 @@ mod test {
                         .id(None)
                         .name("")
                         .signal(signal)
-                        .ref_ax(#leptos_form_krate::ref_ax_factory(|x| x))
-                        .mut_ax(#leptos_form_krate::mut_ax_factory(|x| x))
                         .config(config)
                         .build();
-                    let view = <MyFormData as #leptos_form_krate::FormComponent<__MyFormDataSignalType, #leptos_krate::View>>::render(props);
+                    let view = <MyFormData as #leptos_form_krate::FormComponent<#leptos_krate::View>>::render(props);
                     #leptos_krate::view! {
                         <Form action="/api/my-form-data">
                             {view}

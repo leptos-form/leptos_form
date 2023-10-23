@@ -12,28 +12,27 @@ impl DefaultHtmlElement for ::uuid::Uuid {
 #[cfg(feature = "uuid")]
 impl FormSignalType<HtmlElement<Input>> for ::uuid::Uuid {
     type Config = ();
-    type SignalType = String;
+    type SignalType = RwSignal<String>;
+
+    fn default_signal() -> Self::SignalType {
+        RwSignal::new(Default::default())
+    }
+    fn is_default_value(signal: &Self::SignalType) -> bool {
+        signal.with(|value| value.is_empty())
+    }
     fn into_signal_type(self, _: &Self::Config) -> Self::SignalType {
-        self.to_string()
+        RwSignal::new(self.to_string())
     }
     fn try_from_signal_type(signal_type: Self::SignalType, _: &Self::Config) -> Result<Self, FormError> {
         use std::str::FromStr;
-        ::uuid::Uuid::from_str(&signal_type).map_err(FormError::parse)
+        signal_type.with(|value| ::uuid::Uuid::from_str(value).map_err(FormError::parse))
     }
 }
 
 #[cfg(feature = "uuid")]
-impl<T: 'static> FormComponent<T, HtmlElement<Input>> for ::uuid::Uuid {
-    fn render(
-        props: RenderProps<
-            T,
-            impl RefAccessor<T, Self::SignalType>,
-            impl MutAccessor<T, Self::SignalType>,
-            Self::Config,
-        >,
-    ) -> impl IntoView {
-        props.signal.with(|t| {
-            let value = (props.ref_ax)(t);
+impl FormComponent<HtmlElement<Input>> for ::uuid::Uuid {
+    fn render(props: RenderProps<Self::SignalType, Self::Config>) -> impl IntoView {
+        props.signal.with(|value| {
             view! {
                 <input
                     id={props.id.unwrap_or_else(|| props.name.clone())}
@@ -41,7 +40,7 @@ impl<T: 'static> FormComponent<T, HtmlElement<Input>> for ::uuid::Uuid {
                     class={props.class}
                     type="text"
                     value={value}
-                    on:change=setter(props.signal, props.mut_ax, |x| x.as_string())
+                    on:change=setter(props.signal, |x| x.as_string())
                 />
             }
         });
@@ -74,18 +73,24 @@ cfg_if! { if #[cfg(feature = "chrono")] {
 
             impl FormSignalType<HtmlElement<Input>> for $ty {
                 type Config = ChronoConfig;
-                type SignalType = String;
+                type SignalType = RwSignal<String>;
+
+                fn default_signal() -> Self::SignalType {
+                    RwSignal::new(Default::default())
+                }
+                fn is_default_value(signal: &Self::SignalType) -> bool {
+                    signal.with(|value| value.is_empty())
+                }
                 fn into_signal_type(self, config: &Self::Config) -> Self::SignalType {
-                    self.format(config.format).to_string()
+                    RwSignal::new(self.format(config.format).to_string())
                 }
 
                 $($from)*
             }
 
-            impl<T: 'static> FormComponent<T, HtmlElement<Input>> for $ty {
-                fn render(props: RenderProps<T, impl RefAccessor<T, Self::SignalType>, impl MutAccessor<T, Self::SignalType>, Self::Config>) -> impl IntoView {
-                    props.signal.with(|t| {
-                        let value = (props.ref_ax)(t);
+            impl FormComponent<HtmlElement<Input>> for $ty {
+                fn render(props: RenderProps<Self::SignalType, Self::Config>) -> impl IntoView {
+                    props.signal.with(|value| {
                         view! {
                             <input
                                 id={props.id.unwrap_or_else(|| props.name.clone())}
@@ -93,7 +98,7 @@ cfg_if! { if #[cfg(feature = "chrono")] {
                                 class={props.class}
                                 type="text"
                                 value={value}
-                                on:change=setter(props.signal, props.mut_ax, |x| x.as_string())
+                                on:change=setter(props.signal, |x| x.as_string())
                             />
                         }
                     })
@@ -104,23 +109,23 @@ cfg_if! { if #[cfg(feature = "chrono")] {
 
     chrono_impl!(
         NaiveDateTime {
-            fn try_from_signal_type(signal_type: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
-                Self::parse_from_str(&signal_type, config.format).map_err(FormError::parse)
+            fn try_from_signal_type(signal: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
+                signal.with(|value| Self::parse_from_str(value, config.format).map_err(FormError::parse))
             }
         },
         DateTime<FixedOffset> {
-            fn try_from_signal_type(signal_type: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
-                DateTime::parse_from_str(&signal_type, config.format).map_err(FormError::parse)
+            fn try_from_signal_type(signal: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
+                signal.with(|value| DateTime::parse_from_str(value, config.format).map_err(FormError::parse))
             }
         },
         DateTime<Utc> {
-            fn try_from_signal_type(signal_type: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
-                DateTime::parse_from_str(&signal_type, config.format).map(|x| x.with_timezone(&Utc)).map_err(FormError::parse)
+            fn try_from_signal_type(signal: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
+                signal.with(|value| DateTime::parse_from_str(value, config.format).map(|x| x.with_timezone(&Utc)).map_err(FormError::parse))
             }
         },
         DateTime<Local> {
-            fn try_from_signal_type(signal_type: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
-                DateTime::parse_from_str(&signal_type, config.format).map(|x| x.with_timezone(&Local)).map_err(FormError::parse)
+            fn try_from_signal_type(signal: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
+                signal.with(|value| DateTime::parse_from_str(value, config.format).map(|x| x.with_timezone(&Local)).map_err(FormError::parse))
             }
         },
     );

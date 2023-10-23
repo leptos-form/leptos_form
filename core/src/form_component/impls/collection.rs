@@ -84,69 +84,66 @@ where
     <U as FormSignalType<El>>::SignalType: Clone,
 {
     type Config = VecConfig<<U as FormSignalType<El>>::Config>;
-    type SignalType = Vec<<U as FormSignalType<El>>::SignalType>;
+    type SignalType = RwSignal<Vec<<U as FormSignalType<El>>::SignalType>>;
 
+    fn default_signal() -> Self::SignalType {
+        RwSignal::new(vec![])
+    }
+    fn is_default_value(signal: &Self::SignalType) -> bool {
+        signal.with(|items| items.is_empty())
+    }
     fn into_signal_type(self, config: &Self::Config) -> Self::SignalType {
-        self.into_iter().map(|u| u.into_signal_type(&config.item)).collect()
+        RwSignal::new(self.into_iter().map(|u| u.into_signal_type(&config.item)).collect())
     }
     fn try_from_signal_type(signal_type: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
         signal_type
+            .get()
             .into_iter()
             .map(|inner_singal_type| U::try_from_signal_type(inner_singal_type, &config.item))
             .collect()
     }
 }
 
-impl<U, T: 'static, El> FormComponent<T, Vec<El>> for Vec<U>
+impl<U, El> FormComponent<Vec<El>> for Vec<U>
 where
-    U: FormComponent<T, El>,
+    U: FormComponent<El>,
     <U as FormSignalType<El>>::SignalType: Clone,
 {
-    fn render(
-        props: RenderProps<
-            T,
-            impl RefAccessor<T, Self::SignalType>,
-            impl MutAccessor<T, Self::SignalType>,
-            Self::Config,
-        >,
-    ) -> impl IntoView {
+    fn render(props: RenderProps<Self::SignalType, Self::Config>) -> impl IntoView {
         let vec_config = &props.config;
         let (min_items, max_items) = vec_config.items.split();
 
         if min_items.is_some() || max_items.is_some() {
-            props.signal.update(|t| {
-                let value = (props.mut_ax)(t);
+            props.signal.update(|items| {
                 if let Some(min_items) = min_items {
-                    if value.len() < min_items {
-                        value.resize(min_items, Default::default());
+                    if items.len() < min_items {
+                        items.resize(min_items, U::default_signal());
                     }
                 }
                 if let Some(max_items) = max_items {
-                    if max_items < value.len() {
-                        value.resize(max_items, Default::default());
+                    if max_items < items.len() {
+                        items.resize(max_items, U::default_signal());
                     }
                 }
             });
         }
 
-        props.signal.with(|t| {
-            let value = (props.ref_ax)(t);
-            let num_items = value.len();
-            let mut nodes = value
-                .iter()
+        props.signal.with(|items| {
+            let num_items = items.len();
+            let mut nodes = items
+                .clone()
+                .into_iter()
                 .enumerate()
-                .map(|(i, _)| {
+                .map(|(i, item_signal)| {
                     let id = crate::format_form_id(props.id.as_ref(), i.to_string());
                     let props = RenderProps::builder()
                         .id(id.clone())
                         .name(crate::format_form_name(Some(&props.name), i.to_string()))
-                        .ref_ax(ref_ax_factory(move |t| &(props.ref_ax)(t)[i]))
-                        .mut_ax(mut_ax_factory(move |t| &mut (props.mut_ax)(t)[i]))
-                        .signal(props.signal)
+                        .signal(item_signal)
                         .config(props.config.item.clone())
                         .build();
                     vec_config
-                        .wrap(num_items, i, id, <U as FormComponent<T, El>>::render(props))
+                        .wrap(num_items, i, id, <U as FormComponent<El>>::render(props))
                         .into_view()
                 })
                 .collect::<Vec<_>>();
@@ -158,9 +155,8 @@ where
                         <input
                             type="button"
                             value="Add"
-                            on:click={move |_| props.signal.update(|t| {
-                                let value = (props.mut_ax)(t);
-                                value.push(Default::default());
+                            on:click={move |_| props.signal.update(|items| {
+                                items.push(U::default_signal());
                             })}
                         />
                     }
@@ -169,9 +165,8 @@ where
                         <button
                             class={adornment_spec.class.clone()}
                             value={adornment_spec.text.clone().unwrap_or(Oco::Borrowed("Add"))}
-                            on:click={move |_| props.signal.update(|t| {
-                                let value = (props.mut_ax)(t);
-                                value.push(Default::default());
+                            on:click={move |_| props.signal.update(|items| {
+                                items.push(U::default_signal());
                             })}
                         />
                     }
