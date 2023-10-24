@@ -1,5 +1,5 @@
 [package]
-name = "leptos-form-core"
+name = "leptos_form_core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

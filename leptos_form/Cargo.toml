@@ -1,0 +1,15 @@
+[package]
+name = "leptos_form"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+leptos.workspace = true
+leptos_form_core.path = "../core"
+leptos_form_proc_macros.path = "../proc_macros"
+leptos_router.workspace = true
+
+[features]
+chrono = ["leptos_form_core/chrono"]
+uuid = ["leptos_form_core/uuid"]

@@ -58,9 +58,11 @@ pub enum VecItems {
 pub enum Adornment {
     #[default]
     Default,
-    Component(#[derivative(Debug = "ignore")] Rc<dyn Fn(Rc<dyn Fn(web_sys::MouseEvent)>) -> View + 'static>),
+    Component(#[derivative(Debug = "ignore")] AdornmentComponent),
     Spec(AdornmentSpec),
 }
+
+pub type AdornmentComponent = Rc<dyn Fn(Rc<dyn Fn(web_sys::MouseEvent)>) -> View + 'static>;
 
 #[derive(Clone, Debug, TypedBuilder)]
 #[builder(field_defaults(default, setter(into)))]
@@ -309,8 +311,8 @@ impl<Config: Default> VecConfig<Config> {
             let on_remove = move |_| {
                 signal.update(|items| {
                     items.remove(i);
-                    for j in i..items.len() {
-                        items[j].index = j;
+                    for (index, item) in items.iter_mut().enumerate().skip(i) {
+                        item.index = index;
                     }
                 });
             };

@@ -1,5 +1,5 @@
 [workspace]
-members = ["leptos-form"]
+members = ["leptos_form"]
 resolver = "2"
 
 [workspace.package]
@@ -16,7 +16,7 @@ derive_more = "~0.99"
 derivative = "2"
 inner = "0"
 itertools = "~0.11"
-leptos = "~0.5"
+leptos = { version = "~0.5", features = ["experimental-islands"] }
 leptos_router = "~0.5"
 num-traits = "~0.2"
 paste = "~1"
