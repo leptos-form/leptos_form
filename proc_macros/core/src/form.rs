@@ -34,9 +34,8 @@ struct FormOpts {
     internal: Option<bool>,
     id: Option<syn::LitStr>,
     island: Option<SpannedValue<Flag>>,
-    label: FormLabel,
+    label: Option<FormLabel>,
     submit: Option<syn::Expr>,
-    // forwarded data
     vis: syn::Visibility,
     ident: syn::Ident,
     data: darling::ast::Data<(), SpannedValue<FormField>>,
@@ -160,12 +159,6 @@ impl FromMeta for Groups {
 }
 
 impl FromMeta for Action {
-    fn from_value(value: &syn::Lit) -> Result<Self, darling::Error> {
-        Ok(match value {
-            syn::Lit::Str(lit_str) => Self::Url(lit_str.clone()),
-            _ => return Err(darling::Error::unexpected_lit_type(value)),
-        })
-    }
     fn from_expr(expr: &syn::Expr) -> Result<Self, darling::Error> {
         use darling::Error;
 
@@ -197,6 +190,10 @@ impl FromMeta for Action {
                     url: None,
                 }
             }
+            syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(lit_str),
+                ..
+            }) => Self::Url(lit_str.clone()),
             syn::Expr::Tuple(expr_tuple) => {
                 if expr_tuple.elems.len() != 2 {
                     return Err(Error::custom(r#"ActionForm cannot be used without full specification like so: `action = (server_fn_path(data), "/api/url")`"#).with_span(&expr_tuple.elems.span()));
@@ -278,9 +275,9 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
     let props_ident = format_ident!("props");
     let signal_ident = format_ident!("__{ident}Signal");
     let config_ident = format_ident!("__{ident}Config");
-    let err_ident = format_ident!("__{ident}Errors");
     let error_ident = format_ident!("error");
 
+    let form_label = form_label.unwrap_or_default();
     let is_internal = internal.unwrap_or_default();
 
     let component_ident = if component.unwrap_or_default().is_present() {
@@ -560,7 +557,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                             #open_tag
                                 {move || <#ident as #leptos_form_krate::FormComponent<#leptos_krate::View>>::render(#props_signal_ident.get())}
                                 #({#leptos_krate::#submit})*
-                                <FormSubmissionHandler action={#action_ident} />
+                                <FormSubmissionHandler action=#action_ident />
                             #close_tag
                         }
                     }
@@ -579,11 +576,6 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         #[derive(Clone, Debug, Default)]
         pub struct #config_ident {
             #(pub #signal_field_idents: <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::Config,)*
-        }
-
-        #[derive(Clone, Debug, Default)]
-        pub struct #err_ident {
-            #(pub #signal_field_idents: Option<#leptos_form_krate::FormError>,)*
         }
 
         impl ::core::convert::AsRef<#signal_ident> for #signal_ident {
@@ -625,9 +617,6 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 Ok(#ident {
                     #(#field_axs: <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::try_from_signal(signal.#field_axs, &#config_var_ident.#field_axs)? ,)*
                 })
-            }
-            fn with_error<O>(_: &Self::Signal, f: impl FnOnce(Option<&#leptos_form_krate::FormError>) -> O) -> O {
-                f(None)
             }
         }
 
@@ -718,8 +707,8 @@ fn wrap_field(
     let field = spanned.deref();
     let (container, id, class, rename_all, value) =
         match (field.label.as_ref().unwrap_or(&FieldLabel::Default), form_label) {
-            (FieldLabel::None, _) => return Ok(field_view),
-            (FieldLabel::Default, FormLabel::None) => return Ok(field_view),
+            (FieldLabel::None, _) => return Ok(quote!(#field_view #error_view)),
+            (FieldLabel::Default, FormLabel::None) => return Ok(quote!(#field_view #error_view)),
             (FieldLabel::Default, FormLabel::Default) => (None, None, None, None, None),
             (
                 FieldLabel::Default,
@@ -899,7 +888,7 @@ mod test {
     fn test1() -> Result<(), Error> {
         let input = quote!(
             #[derive(Form)]
-            #[form(rename_labels = "Title Case")]
+            #[form(label(wrap(rename_all = "Title Case")))]
             pub struct MyFormData {
                 pub id: Uuid,
                 pub slug: String,
@@ -912,7 +901,7 @@ mod test {
         let leptos_form_krate = quote!(::leptos_form);
 
         let expected = quote!(
-            #[derive(Clone, Debug, Default)]
+            #[derive(Clone, Copy, Debug)]
             pub struct __MyFormDataSignal {
                 pub id: <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::Signal,
                 pub slug: <String as #leptos_form_krate::FormField<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::Signal,
@@ -947,6 +936,20 @@ mod test {
             impl #leptos_form_krate::FormField<#leptos_krate::View> for MyFormData {
                 type Config = __MyFormDataConfig;
                 type Signal = __MyFormDataSignal;
+                fn default_signal() -> Self::Signal {
+                    __MyFormDataSignal {
+                        id: <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
+                        slug: <String as #leptos_form_krate::FormField<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
+                        created_at: <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
+                        count: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
+                    }
+                }
+                fn is_default_value(signal: &Self::Signal) -> bool {
+                    <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.id) &&
+                    <String as #leptos_form_krate::FormField<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.slug) &&
+                    <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.created_at) &&
+                    <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.count)
+                }
                 fn into_signal(self, config: &Self::Config) -> Self::Signal {
                     __MyFormDataSignal {
                         id: <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::into_signal(self.id, &config.id),
@@ -965,7 +968,7 @@ mod test {
                 }
             }
 
-            impl<__Signal: 'static> #leptos_form_krate::FormComponent<#leptos_krate::View> for MyFormData {
+            impl #leptos_form_krate::FormComponent<#leptos_krate::View> for MyFormData {
                 #[allow(unused_imports)]
                 fn render(props: #leptos_form_krate::RenderProps<Self::Signal, Self::Config>) -> impl #leptos_krate::IntoView {
                     use #leptos_krate::{IntoAttribute, IntoView};
@@ -978,7 +981,18 @@ mod test {
                         .signal(props.signal.id.clone())
                         .config(<Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
                         .build();
-                    let _id_view = <Uuid as #leptos_form_krate::FormComponent<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_id_props);
+
+                    let _id_error = move || <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::with_error(
+                        &_id_props.signal,
+                        |error| match error {
+                            Some(form_error) => {
+                                let error = format!("{form_error}");
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red">{error}</span> })
+                            },
+                            None => #leptos_krate::View::default(),
+                        },
+                    );
+                    let _id_view = move || <Uuid as #leptos_form_krate::FormComponent<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_id_props.clone());
 
                     let _slug_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "slug");
                     let _slug_name = #leptos_form_krate::format_form_name(Some(&props.name), "slug");
@@ -988,44 +1002,82 @@ mod test {
                         .signal(props.signal.slug.clone())
                         .config(<String as #leptos_form_krate::FormField<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
                         .build();
-                    let _slug_view = <String as #leptos_form_krate::FormComponent<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_slug_props);
+
+
+                    let _slug_error = move || <String as #leptos_form_krate::FormField<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::with_error(
+                        &_slug_props.signal,
+                        |error| match error {
+                            Some(form_error) => {
+                                let error = format!("{form_error}");
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red">{error}</span> })
+                            },
+                            None => #leptos_krate::View::default(),
+                        },
+                    );
+                    let _slug_view = move || <String as #leptos_form_krate::FormComponent<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_slug_props.clone());
 
                     let _created_at_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "created-at");
                     let _created_at_name = #leptos_form_krate::format_form_name(Some(&props.name), "created_at");
                     let _created_at_props = #leptos_form_krate::RenderProps::builder()
                         .id(_created_at_id.clone())
                         .name(_created_at_name.clone())
-                        .signal(props.signal.created_at)
+                        .signal(props.signal.created_at.clone())
                         .config(<chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
                         .build();
-                    let _created_at_view = <chrono::NaiveDateTime as #leptos_form_krate::FormComponent<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_created_at_props);
+
+                    let _created_at_error = move || <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::with_error(
+                        &_created_at_props.signal,
+                        |error| match error {
+                            Some(form_error) => {
+                                let error = format!("{form_error}");
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red">{error}</span> })
+                            },
+                            None => #leptos_krate::View::default(),
+                        },
+                    );
+                    let _created_at_view = move || <chrono::NaiveDateTime as #leptos_form_krate::FormComponent<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_created_at_props.clone());
 
                     let _count_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "count");
                     let _count_name = #leptos_form_krate::format_form_name(Some(&props.name), "count");
                     let _count_props = #leptos_form_krate::RenderProps::builder()
                         .id(_count_id.clone())
                         .name(_count_name.clone())
-                        .signal(props.signal.count)
+                        .signal(props.signal.count.clone())
                         .config(<u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
                         .build();
-                    let _count_view = <u8 as #leptos_form_krate::FormComponent<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_count_props);
+
+                    let _count_error = move || <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::with_error(
+                        &_count_props.signal,
+                        |error| match error {
+                            Some(form_error) => {
+                                let error = format!("{form_error}");
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red">{error}</span> })
+                            },
+                            None => #leptos_krate::View::default(),
+                        },
+                    );
+                    let _count_view = move || <u8 as #leptos_form_krate::FormComponent<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_count_props.clone());
 
                     #leptos_krate::view! {
                         <label for={_id_id}>
                             <div>"Id"</div>
                             {_id_view}
+                            {_id_error}
                         </label>
                         <label for={_slug_id}>
                             <div>"Slug"</div>
                             {_slug_view}
+                            {_slug_error}
                         </label>
                         <label for={_created_at_id}>
                             <div>"Created At"</div>
                             {_created_at_view}
+                            {_created_at_error}
                         </label>
                         <label for={_count_id}>
                             <div>"Count"</div>
                             {_count_view}
+                            {_count_error}
                         </label>
                     }
                 }
@@ -1050,9 +1102,9 @@ mod test {
         let input = quote!(
             #[derive(Form)]
             pub struct MyFormData {
-                #[form(class = "hi", id = "hello-there", label = "AYO", label_class = "test")]
+                #[form(class = "hi", id = "hello-there", label(wrap(class = "test", value = "AYO")))]
                 pub abc_123: Uuid,
-                #[form(no_label)]
+                #[form(label = "none")]
                 pub zz: u8,
             }
         );
@@ -1061,7 +1113,7 @@ mod test {
         let leptos_form_krate = quote!(::leptos_form);
 
         let expected = quote!(
-            #[derive(Clone, Debug, Default)]
+            #[derive(Clone, Copy, Debug)]
             pub struct __MyFormDataSignal {
                 pub abc_123: <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::Signal,
                 pub zz: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Signal,
@@ -1092,6 +1144,17 @@ mod test {
             impl #leptos_form_krate::FormField<#leptos_krate::View> for MyFormData {
                 type Config = __MyFormDataConfig;
                 type Signal = __MyFormDataSignal;
+
+                fn default_signal() -> Self::Signal {
+                    __MyFormDataSignal {
+                        abc_123: <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
+                        zz: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
+                    }
+                }
+                fn is_default_value(signal: &Self::Signal) -> bool {
+                    <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.abc_123) &&
+                    <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.zz)
+                }
                 fn into_signal(self, config: &Self::Config) -> Self::Signal {
                     __MyFormDataSignal {
                         abc_123: <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::into_signal(self.abc_123, &config.abc_123),
@@ -1106,7 +1169,7 @@ mod test {
                 }
             }
 
-            impl<__Signal: 'static> #leptos_form_krate::FormComponent<#leptos_krate::View> for MyFormData {
+            impl #leptos_form_krate::FormComponent<#leptos_krate::View> for MyFormData {
                 #[allow(unused_imports)]
                 fn render(props: #leptos_form_krate::RenderProps<Self::Signal, Self::Config>) -> impl #leptos_krate::IntoView {
                     use #leptos_krate::{IntoAttribute, IntoView};
@@ -1117,27 +1180,51 @@ mod test {
                         .id(_abc_123_id.clone())
                         .name(_abc_123_name.clone())
                         .class(Oco::Borrowed("hi"))
-                        .signal(props.signal.abc_123)
+                        .signal(props.signal.abc_123.clone())
                         .config(<Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
                         .build();
-                    let _abc_123_view = <Uuid as #leptos_form_krate::FormComponent<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_abc_123_props);
+
+                    let _abc_123_error = move || <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::with_error(
+                        &_abc_123_props.signal,
+                        |error| match error {
+                            Some(form_error) => {
+                                let error = format!("{form_error}");
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red">{error}</span> })
+                            },
+                            None => #leptos_krate::View::default(),
+                        },
+                    );
+                    let _abc_123_view = move || <Uuid as #leptos_form_krate::FormComponent<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_abc_123_props.clone());
 
                     let _zz_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "zz");
                     let _zz_name = #leptos_form_krate::format_form_name(Some(&props.name), "zz");
                     let _zz_props = #leptos_form_krate::RenderProps::builder()
                         .id(_zz_id.clone())
                         .name(_zz_name.clone())
-                        .signal(props.signal.zz)
+                        .signal(props.signal.zz.clone())
                         .config(<u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
                         .build();
-                    let _zz_view = <u8 as #leptos_form_krate::FormComponent<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_zz_props);
+
+                    let _zz_error = move || <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::with_error(
+                        &_zz_props.signal,
+                        |error| match error {
+                            Some(form_error) => {
+                                let error = format!("{form_error}");
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red">{error}</span> })
+                            },
+                            None => #leptos_krate::View::default(),
+                        },
+                    );
+                    let _zz_view = move || <u8 as #leptos_form_krate::FormComponent<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_zz_props.clone());
 
                     #leptos_krate::view! {
                         <label for={_abc_123_id} class="test">
                             <div>"AYO"</div>
                             {_abc_123_view}
+                            {_abc_123_error}
                         </label>
                         {_zz_view}
+                        {_zz_error}
                     }
                 }
             }
@@ -1160,7 +1247,7 @@ mod test {
     fn test3() -> Result<(), Error> {
         let input = quote!(
             #[derive(Form)]
-            #[form(component(action = "/api/my-form-data"))]
+            #[form(action = "/api/my-form-data", component)]
             pub struct MyFormData {
                 pub ayo: u8,
             }
@@ -1171,7 +1258,7 @@ mod test {
         let leptos_form_krate = quote!(::leptos_form);
 
         let expected = quote!(
-            #[derive(Clone, Debug, Default)]
+            #[derive(Clone, Copy, Debug)]
             pub struct __MyFormDataSignal {
                 pub ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Signal,
             }
@@ -1200,6 +1287,15 @@ mod test {
             impl #leptos_form_krate::FormField<#leptos_krate::View> for MyFormData {
                 type Config = __MyFormDataConfig;
                 type Signal = __MyFormDataSignal;
+
+                fn default_signal() -> Self::Signal {
+                    __MyFormDataSignal {
+                        ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
+                    }
+                }
+                fn is_default_value(signal: &Self::Signal) -> bool {
+                    <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.ayo)
+                }
                 fn into_signal(self, config: &Self::Config) -> Self::Signal {
                     __MyFormDataSignal {
                         ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::into_signal(self.ayo, &config.ayo),
@@ -1212,7 +1308,7 @@ mod test {
                 }
             }
 
-            impl<__Signal: 'static> #leptos_form_krate::FormComponent<#leptos_krate::View> for MyFormData {
+            impl #leptos_form_krate::FormComponent<#leptos_krate::View> for MyFormData {
                 #[allow(unused_imports)]
                 fn render(props: #leptos_form_krate::RenderProps<Self::Signal, Self::Config>) -> impl #leptos_krate::IntoView {
                     use #leptos_krate::{IntoAttribute, IntoView};
@@ -1222,15 +1318,27 @@ mod test {
                     let _ayo_props = #leptos_form_krate::RenderProps::builder()
                         .id(_ayo_id.clone())
                         .name(_ayo_name.clone())
-                        .signal(props.signal.ayo)
+                        .signal(props.signal.ayo.clone())
                         .config(<u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
                         .build();
-                    let _ayo_view = <u8 as #leptos_form_krate::FormComponent<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_ayo_props);
+
+                    let _ayo_error = move || <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::with_error(
+                        &_ayo_props.signal,
+                        |error| match error {
+                            Some(form_error) => {
+                                let error = format!("{form_error}");
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red">{error}</span> })
+                            },
+                            None => #leptos_krate::View::default(),
+                        }
+                    );
+                    let _ayo_view = move || <u8 as #leptos_form_krate::FormComponent<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_ayo_props.clone());
 
                     #leptos_krate::view! {
                         <label for={_ayo_id}>
                             <div>"ayo"</div>
                             {_ayo_view}
+                            {_ayo_error}
                         </label>
                     }
                 }
@@ -1241,8 +1349,8 @@ mod test {
             #[allow(unused_imports)]
             mod leptos_form_component_my_form_data {
                 use super::*;
-                use #leptos_form_krate::FormField;
-                use #leptos_krate::IntoView;
+                use #leptos_form_krate::{FormField, components::FormSubmissionHandler};
+                use #leptos_krate::{IntoAttribute, IntoView};
                 use #leptos_router_krate::Form;
 
                 #[#leptos_krate::component]
@@ -1251,17 +1359,32 @@ mod test {
                         ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
                     };
 
-                    let signal = #leptos_krate::create_rw_signal(initial.into_signal(&config));
-                    let props = #leptos_form_krate::RenderProps::builder()
+                    let signal = #leptos_krate::create_rw_signal(#leptos_form_krate::RenderProps::builder()
                         .id(None)
                         .name("")
-                        .signal(signal)
-                        .config(config)
-                        .build();
-                    let view = <MyFormData as #leptos_form_krate::FormComponent<#leptos_krate::View>>::render(props);
+                        .signal(initial.clone().into_signal(&config))
+                        .config(config.clone())
+                        .build()
+                    );
+                    let parse_error_handler = |err: #leptos_form_krate::FormError| logging::error!("{err}");
+                    #leptos_krate::create_effect(move |_| {
+                        if let Some(Ok(_)) = action.value().get() {
+                            let config = __MyFormDataConfig {
+                                ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
+                            };
+                            let new_props = #leptos_form_krate::RenderProps::builder()
+                                .id(None)
+                                .name("")
+                                .signal(initial.clone().into_signal(&config))
+                                .config(config.clone())
+                                .build();
+                            signal.update(move |x| *x = new_props);
+                        }
+                    });
                     #leptos_krate::view! {
                         <Form action="/api/my-form-data">
-                            {view}
+                            {move || <MyFormData as #leptos_form_krate::FormComponent<#leptos_krate::View>>::render(signal.get())}
+                            <FormSubmissionHandler action=action />
                         </Form>
                     }
                 }
@@ -1283,7 +1406,6 @@ mod test {
 
     pub fn cleanup(tokens: &TokenStream) -> String {
         let tokens = tokens.to_string();
-
         tokens.replace("< <", "<<").replace("> >", ">>")
     }
 

@@ -27,9 +27,12 @@ pub trait FormField<El>: Sized {
     fn is_default_value(signal: &Self::Signal) -> bool;
     fn into_signal(self, config: &Self::Config) -> Self::Signal;
     fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError>;
-    fn with_error<O>(signal: &Self::Signal, f: impl FnOnce(Option<&FormError>) -> O) -> O;
     fn validate(_: Self::Signal) -> Result<(), FormError> {
         Ok(())
+    }
+    #[allow(unused_variables)]
+    fn with_error<O>(signal: &Self::Signal, f: impl FnOnce(Option<&FormError>) -> O) -> O {
+        f(None)
     }
 }
 
