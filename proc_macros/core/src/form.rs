@@ -35,6 +35,8 @@ struct FormOpts {
     id: Option<syn::LitStr>,
     island: Option<SpannedValue<Flag>>,
     label: Option<FormLabel>,
+    on_error: Option<syn::Expr>,
+    on_success: Option<syn::Expr>,
     submit: Option<syn::Expr>,
     vis: syn::Visibility,
     ident: syn::Ident,
@@ -265,6 +267,8 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         internal,
         island,
         label: form_label,
+        on_error,
+        on_success,
         submit,
         vis,
         ident,
@@ -463,9 +467,12 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
     let component_tokens = component_ident
         .map(|component_ident| {
-            let id = form_id.iter().collect_vec();
-            let class = form_class.iter().collect_vec();
-            let submit = submit.iter().collect_vec();
+            let id = form_id.iter();
+            let class = form_class.iter();
+            let submit = submit.iter();
+            let on_error = on_error.iter();
+            let on_success = on_success.iter();
+
             let props_id = form_id.as_ref().map(|id| quote!(#id)).unwrap_or_else(|| quote!(None));
 
             let action_ident = format_ident!("action");
@@ -534,6 +541,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                     use #leptos_form_krate::{FormField, components::FormSubmissionHandler};
                     use #leptos_krate::{IntoAttribute, IntoView};
                     #tag_import
+                    use ::std::rc::Rc;
 
                     #pound[#leptos_krate::#component_ident]
                     #vis fn #ident(initial: #ident) -> impl IntoView {
@@ -543,7 +551,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
                         let #props_signal_ident = #leptos_krate::create_rw_signal(#props_builder);
 
-                        let #parse_error_handler_ident = |err: #leptos_form_krate::FormError| logging::error!("{err}");
+                        let #parse_error_handler_ident = |err: #leptos_form_krate::FormError| logging::debug_warn!("{err}");
 
                         #leptos_krate::create_effect(move |_| {
                             if let Some(Ok(_)) = #action_ident.value().get() {
@@ -557,7 +565,11 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                             #open_tag
                                 {move || <#ident as #leptos_form_krate::FormComponent<#leptos_krate::View>>::render(#props_signal_ident.get())}
                                 #({#leptos_krate::#submit})*
-                                <FormSubmissionHandler action=#action_ident />
+                                <FormSubmissionHandler
+                                    action=#action_ident
+                                    #(on_success=Rc::new(#on_success))*
+                                    #(on_error=Rc::new(#on_error))*
+                                />
                             #close_tag
                         }
                     }
@@ -1352,6 +1364,7 @@ mod test {
                 use #leptos_form_krate::{FormField, components::FormSubmissionHandler};
                 use #leptos_krate::{IntoAttribute, IntoView};
                 use #leptos_router_krate::Form;
+                use ::std::rc::Rc;
 
                 #[#leptos_krate::component]
                 pub fn MyFormData(initial: MyFormData) -> impl IntoView {
@@ -1366,7 +1379,7 @@ mod test {
                         .config(config.clone())
                         .build()
                     );
-                    let parse_error_handler = |err: #leptos_form_krate::FormError| logging::error!("{err}");
+                    let parse_error_handler = |err: #leptos_form_krate::FormError| logging::debug_warn!("{err}");
                     #leptos_krate::create_effect(move |_| {
                         if let Some(Ok(_)) = action.value().get() {
                             let config = __MyFormDataConfig {

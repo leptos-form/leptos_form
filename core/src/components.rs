@@ -4,21 +4,32 @@ use std::rc::Rc;
 #[component]
 pub fn FormSubmissionHandler<I: 'static, T: Clone + 'static>(
     action: Action<I, Result<T, ServerFnError>>,
-    #[prop(optional_no_strip, into)] _on_success: Option<Rc<dyn Fn(T) + 'static>>,
-    #[prop(optional_no_strip, into)] _on_error: Option<Rc<dyn Fn(ServerFnError) + 'static>>,
+    #[prop(optional)] on_success: Option<Rc<dyn Fn(T, Action<I, Result<T, ServerFnError>>) -> View + 'static>>,
+    #[prop(optional)] on_error: Option<
+        Rc<dyn Fn(ServerFnError, Action<I, Result<T, ServerFnError>>) -> View + 'static>,
+    >,
 ) -> impl IntoView {
-    view! {{move || match action.value().get() {
-        Some(Err(err)) => view!{
-            <div>
-            {move || match err.clone() {
-                ServerFnError::Request(err) => err,
-                ServerFnError::ServerError(err) => err,
-                _ => "Internal Error".to_string(),
-            }}
-            </div>
-        }.into_view(),
-        None if action.pending().get() => view! { <div>"Loading..."</div> }.into_view(),
-        _ => View::default(),
+    view! {{move || match action.pending().get() {
+        true => view! { <div>"Loading..."</div> }.into_view(),
+        false => match action.value().get() {
+            Some(Ok(ok)) => match on_success.clone() {
+                Some(on_success) => on_success(ok, action),
+                None => View::default(),
+            },
+            Some(Err(err)) => match on_error.clone() {
+                Some(on_error) => on_error(err, action),
+                None => view! {
+                    <div>
+                    {move || match err.clone() {
+                        ServerFnError::Request(err) => err,
+                        ServerFnError::ServerError(err) => err,
+                        _ => "Internal Error".to_string(),
+                    }}
+                    </div>
+                }.into_view(),
+            },
+            None => View::default(),
+        }
     }}}
 }
 
