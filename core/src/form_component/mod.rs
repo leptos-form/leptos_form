@@ -3,21 +3,31 @@ mod impls;
 pub use impls::*;
 
 use crate::*;
-use ::leptos::ev::Event;
 use ::leptos::*;
-use ::web_sys::EventTarget;
+use ::wasm_bindgen::JsValue;
+
+#[derive(AsRef, AsMut, Debug, Deref, DerefMut, Derivative, From, Into)]
+#[derivative(Clone(bound = ""), Copy(bound = ""))]
+pub struct FormFieldSignal<T: 'static>(pub RwSignal<FormFieldSignalValue<T>>);
+
+#[derive(Clone, Debug, Default)]
+pub struct FormFieldSignalValue<T> {
+    pub value: T,
+    pub error: Option<FormError>,
+}
 
 /// Provides utilities for a data type's form field representation.
 pub trait FormField<El>: Sized {
     /// A configuration type which is used for mapping between Self and the underlying value of Self::Signal.
-    type Config: Clone + Default;
+    type Config: Clone + Default + 'static;
     /// A RwSignal or wrapper type containing RwSignals which contains the underlying form value.
-    type Signal: 'static;
+    type Signal: Clone + 'static;
 
     fn default_signal() -> Self::Signal;
     fn is_default_value(signal: &Self::Signal) -> bool;
     fn into_signal(self, config: &Self::Config) -> Self::Signal;
     fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError>;
+    fn with_error<O>(signal: &Self::Signal, f: impl FnOnce(Option<&FormError>) -> O) -> O;
     fn validate(_: Self::Signal) -> Result<(), FormError> {
         Ok(())
     }
@@ -43,20 +53,6 @@ pub struct RenderProps<T: 'static, Config = ()> {
     pub config: Config,
 }
 
-#[doc(hidden)]
-pub fn setter<T: 'static>(
-    signal: RwSignal<T>,
-    from_target: impl Copy + Fn(EventTarget) -> Option<T> + 'static,
-) -> impl Fn(Event) {
-    move |event| {
-        if let Some(val) = event.target().and_then(from_target) {
-            signal.update(|x| {
-                *x = val;
-            })
-        }
-    }
-}
-
 impl<T: DefaultHtmlElement> DefaultHtmlElement for Option<T> {
     type El = T::El;
 }
@@ -80,11 +76,17 @@ where
             None => U::default_signal(),
         }
     }
+    fn with_error<O>(signal: &Self::Signal, f: impl FnOnce(Option<&FormError>) -> O) -> O {
+        U::with_error(signal, f)
+    }
     fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError> {
         match Self::is_default_value(&signal) {
             true => Ok(None),
             false => Ok(Some(U::try_from_signal(signal, config)?)),
         }
+    }
+    fn validate(signal: Self::Signal) -> Result<(), FormError> {
+        U::validate(signal)
     }
 }
 
@@ -94,5 +96,26 @@ where
 {
     fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
         U::render(props)
+    }
+}
+
+impl<T: Default + 'static> Default for FormFieldSignal<T> {
+    fn default() -> Self {
+        Self(create_rw_signal(Default::default()))
+    }
+}
+
+impl<T: 'static> From<T> for FormFieldSignal<T> {
+    fn from(value: T) -> Self {
+        Self(create_rw_signal(FormFieldSignalValue { value, error: None }))
+    }
+}
+
+impl<T> From<FormFieldSignalValue<T>> for JsValue
+where
+    JsValue: From<T>,
+{
+    fn from(value: FormFieldSignalValue<T>) -> JsValue {
+        JsValue::from(value.value)
     }
 }

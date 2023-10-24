@@ -1,4 +1,26 @@
 use leptos::*;
+use std::rc::Rc;
+
+#[component]
+pub fn FormSubmissionHandler<I: 'static, T: Clone + 'static>(
+    action: Action<I, Result<T, ServerFnError>>,
+    #[prop(optional_no_strip, into)] _on_success: Option<Rc<dyn Fn(T) + 'static>>,
+    #[prop(optional_no_strip, into)] _on_error: Option<Rc<dyn Fn(ServerFnError) + 'static>>,
+) -> impl IntoView {
+    view! {{move || match action.value().get() {
+        Some(Err(err)) => view!{
+            <div>
+            {move || match err.clone() {
+                ServerFnError::Request(err) => err,
+                ServerFnError::ServerError(err) => err,
+                _ => "Internal Error".to_string(),
+            }}
+            </div>
+        }.into_view(),
+        None if action.pending().get() => view! { <div>"Loading..."</div> }.into_view(),
+        _ => View::default(),
+    }}}
+}
 
 #[component]
 pub fn MaterialIcon(
@@ -22,6 +44,7 @@ pub fn MaterialIcon(
             height="24"
             width="24"
             viewBox="0 -960 960 960"
+            fill="currentColor"
             style={style}
         >
             <path d={d} />

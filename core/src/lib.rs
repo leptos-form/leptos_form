@@ -3,6 +3,8 @@ extern crate cfg_if;
 #[macro_use]
 extern crate derivative;
 #[macro_use]
+extern crate derive_more;
+#[macro_use]
 extern crate paste;
 #[macro_use]
 extern crate thiserror;

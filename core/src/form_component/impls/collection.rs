@@ -58,7 +58,7 @@ pub enum VecItems {
 pub enum Adornment {
     #[default]
     Default,
-    Component(#[derivative(Debug = "ignore")] Rc<dyn Fn() -> View + 'static>),
+    Component(#[derivative(Debug = "ignore")] Rc<dyn Fn(Rc<dyn Fn(web_sys::MouseEvent)>) -> View + 'static>),
     Spec(AdornmentSpec),
 }
 
@@ -74,8 +74,26 @@ pub struct AdornmentSpec {
     pub text: Option<Oco<'static, str>>,
 }
 
+impl Default for AdornmentSpec {
+    fn default() -> Self {
+        Self {
+            class: None,
+            height: 24,
+            width: 24,
+            text: None,
+        }
+    }
+}
+
 impl<U: DefaultHtmlElement> DefaultHtmlElement for Vec<U> {
     type El = Vec<U::El>;
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct VecSignalItem<Signal> {
+    id: usize,
+    index: usize,
+    signal: Signal,
 }
 
 impl<U, El> FormField<Vec<El>> for Vec<U>
@@ -84,98 +102,150 @@ where
     <U as FormField<El>>::Signal: Clone,
 {
     type Config = VecConfig<<U as FormField<El>>::Config>;
-    type Signal = RwSignal<Vec<<U as FormField<El>>::Signal>>;
+    type Signal = RwSignal<Vec<VecSignalItem<<U as FormField<El>>::Signal>>>;
 
     fn default_signal() -> Self::Signal {
-        RwSignal::new(vec![])
+        create_rw_signal(vec![])
     }
     fn is_default_value(signal: &Self::Signal) -> bool {
         signal.with(|items| items.is_empty())
     }
     fn into_signal(self, config: &Self::Config) -> Self::Signal {
-        RwSignal::new(self.into_iter().map(|u| u.into_signal(&config.item)).collect())
+        create_rw_signal(
+            self.into_iter()
+                .enumerate()
+                .map(|(i, item)| VecSignalItem {
+                    id: i,
+                    index: i,
+                    signal: item.into_signal(&config.item),
+                })
+                .collect(),
+        )
     }
     fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError> {
-        signal
-            .get()
-            .into_iter()
-            .map(|inner_singal_type| U::try_from_signal(inner_singal_type, &config.item))
-            .collect()
+        signal.with(|value| {
+            value
+                .iter()
+                .map(|item| U::try_from_signal(item.signal.clone(), &config.item))
+                .collect()
+        })
+    }
+    fn with_error<O>(_: &Self::Signal, f: impl FnOnce(Option<&FormError>) -> O) -> O {
+        f(None)
     }
 }
 
 impl<U, El> FormComponent<Vec<El>> for Vec<U>
 where
     U: FormComponent<El>,
-    <U as FormField<El>>::Signal: Clone,
+    <U as FormField<El>>::Signal: Clone + std::fmt::Debug,
 {
     fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
-        let vec_config = &props.config;
-        let (min_items, max_items) = vec_config.items.split();
+        let (min_items, max_items) = props.config.items.split();
+
+        let next_id =
+            create_rw_signal(
+                props
+                    .signal
+                    .with(|items| if items.is_empty() { 1 } else { items[items.len() - 1].id + 1 }),
+            );
 
         if min_items.is_some() || max_items.is_some() {
             props.signal.update(|items| {
                 if let Some(min_items) = min_items {
                     if items.len() < min_items {
-                        items.resize(min_items, U::default_signal());
+                        items.reserve(min_items - items.len());
+                        while items.len() < min_items {
+                            let id = next_id.get_untracked();
+                            items.push(VecSignalItem {
+                                id,
+                                index: items.len(),
+                                signal: U::default_signal(),
+                            });
+                            next_id.update(|x| *x += 1);
+                        }
                     }
                 }
                 if let Some(max_items) = max_items {
-                    if max_items < items.len() {
-                        items.resize(max_items, U::default_signal());
+                    while max_items < items.len() {
+                        items.pop();
                     }
                 }
             });
         }
 
-        props.signal.with(|items| {
-            let num_items = items.len();
-            let mut nodes = items
-                .clone()
-                .into_iter()
-                .enumerate()
-                .map(|(i, item_signal)| {
-                    let id = crate::format_form_id(props.id.as_ref(), i.to_string());
-                    let props = RenderProps::builder()
+        let key = move |item: &VecSignalItem<<U as FormField<El>>::Signal>| item.id;
+        let VecConfig {
+            item: item_config,
+            item_class,
+            item_label,
+            items,
+            add,
+            remove,
+        } = props.config;
+
+        view! {
+            <For
+                key=key
+                each=move || props.signal.get()
+                children=move |item| {
+                    let id = crate::format_form_id(props.id.as_ref(), item.index.to_string());
+                    let item_props = RenderProps::builder()
                         .id(id.clone())
-                        .name(crate::format_form_name(Some(&props.name), i.to_string()))
-                        .signal(item_signal)
-                        .config(props.config.item.clone())
+                        .name(crate::format_form_name(Some(&props.name), item.index.to_string()))
+                        .class(item_class.map(Oco::Borrowed).or_else(|| props.class.clone()))
+                        .signal(item.signal)
+                        .config(item_config.clone())
                         .build();
-                    vec_config
-                        .wrap(num_items, i, id, <U as FormComponent<El>>::render(props))
-                        .into_view()
-                })
-                .collect::<Vec<_>>();
 
-            if max_items.is_none() || num_items < max_items.unwrap() {
-                nodes.push(match &vec_config.add {
-                    Adornment::Component(component) => component(),
-                    Adornment::Default => view! {
-                        <input
-                            type="button"
-                            value="Add"
-                            on:click={move |_| props.signal.update(|items| {
-                                items.push(U::default_signal());
-                            })}
-                        />
-                    }
-                    .into_view(),
-                    Adornment::Spec(adornment_spec) => view! {
-                        <button
-                            class={adornment_spec.class.clone()}
-                            value={adornment_spec.text.clone().unwrap_or(Oco::Borrowed("Add"))}
-                            on:click={move |_| props.signal.update(|items| {
-                                items.push(U::default_signal());
-                            })}
-                        />
-                    }
-                    .into_view(),
-                });
-            }
+                        VecConfig::<<U as FormField<El>>::Config>::wrap(
+                            &items,
+                            item_class,
+                            item_label.as_ref(),
+                            &remove,
+                            props.signal,
+                            item.index,
+                            id,
+                            <U as FormComponent<El>>::render(item_props),
+                        ).into_view()
+                }
+            />
+            {move || {
+                let num_items = props.signal.with(|items| items.len());
+                if num_items < max_items.unwrap_or(usize::MAX) {
+                    let on_add = move |_| props.signal.update(|items| {
+                            let id = next_id.get_untracked();
+                            items.push(VecSignalItem { id, index: items.len(), signal: U::default_signal() });
+                            next_id.update(|x| *x = id + 1);
+                    });
 
-            nodes
-        })
+                    match &add {
+                        Adornment::Component(component) => component(Rc::new(on_add)),
+                        Adornment::Default => view! {
+                            <input
+                                style="cursor: pointer;"
+                                type="button"
+                                value="Add"
+                                on:click=on_add
+                            />
+                        }
+                        .into_view(),
+                        Adornment::Spec(adornment_spec) => view! {
+                            <input
+                                style="cursor: pointer;"
+                                type="button"
+                                class={adornment_spec.class.clone()}
+                                value={adornment_spec.text.clone().unwrap_or(Oco::Borrowed("Add"))}
+                                on:click=on_add
+                            />
+                        }
+                        .into_view(),
+                    }
+                } else {
+                    Default::default()
+                }
+            }}
+        }
     }
 }
 
@@ -205,30 +275,61 @@ static ASCII_UPPER: [char; 26] = [
 ];
 
 impl<Config: Default> VecConfig<Config> {
-    fn wrap(&self, num_items: usize, i: usize, id: Oco<'static, str>, item: impl IntoView) -> impl IntoView {
-        static DEFAULT_ITEM_STYLE: &str = "display: flex; flex-direction: row;";
+    fn wrap<Signal>(
+        items: &VecItems,
+        item_class: Option<&'static str>,
+        item_label: Option<&ItemLabel>,
+        remove: &Adornment,
+        signal: RwSignal<Vec<VecSignalItem<Signal>>>,
+        i: usize,
+        id: Oco<'static, str>,
+        item: impl IntoView,
+    ) -> impl IntoView {
+        static DEFAULT_ITEM_STYLE: &str =
+            "display: flex; flex-direction: row; align-items: center; margin-bottom: 0.5rem";
 
-        let (min_items, _) = self.items.split();
-        let label_wrapped = self.wrap_label(i, id, item);
+        let num_items = signal.with(|items| items.len());
+        let (min_items, _) = items.split();
+        let label_wrapped = match item_label {
+            Some(item_label) => item_label.wrap_label(i, id, item),
+            None => item.into_view(),
+        };
 
         let more_items_than_min = min_items.unwrap_or_default() < num_items;
 
         let remove = if more_items_than_min || min_items.is_some() {
-            let adornment_style = match (self.item_class.is_some(), more_items_than_min) {
-                (false, true) => Some(Oco::Borrowed("margin-left: 0.5 rem;")),
-                (false, false) => Some(Oco::Borrowed("margin-left: 0.5 rem; visibility: hidden")),
+            let adornment_style = match (item_class.is_some(), more_items_than_min) {
+                (false, true) => Some(Oco::Borrowed("cursor: pointer; margin-left: 0.5rem;")),
+                (false, false) => Some(Oco::Borrowed(
+                    "cursor: pointer; margin-left: 0.5rem; visibility: hidden",
+                )),
                 _ => None,
             };
 
-            match &self.remove {
-                Adornment::Component(component) => component(),
-                Adornment::Default => view! { <MaterialClose style={adornment_style} /> },
+            let on_remove = move |_| {
+                signal.update(|items| {
+                    items.remove(i);
+                    for j in i..items.len() {
+                        items[j].index = j;
+                    }
+                });
+            };
+
+            match remove {
+                Adornment::Component(component) => component(Rc::new(on_remove)),
+                Adornment::Default => view! {
+                    <MaterialClose
+                        style={adornment_style}
+                        on:click=on_remove
+                    />
+                },
                 Adornment::Spec(adornment_spec) => view! {
                     <MaterialClose
                         style={adornment_spec.class.is_none().then_some(adornment_style).flatten()}
                         class={adornment_spec.class.clone()}
                         width={adornment_spec.width}
                         height={adornment_spec.height}
+                        on:click=on_remove
                     />
                 },
             }
@@ -236,24 +337,22 @@ impl<Config: Default> VecConfig<Config> {
             View::default()
         };
 
-        let style = self.item_class.is_none().then_some(DEFAULT_ITEM_STYLE);
+        let style = item_class.is_none().then_some(DEFAULT_ITEM_STYLE);
 
         view! {
-            <div class={self.item_class} style={style}>
+            <div class={item_class} style={style}>
                 {label_wrapped}
                 {remove}
             </div>
         }
     }
+}
 
+impl ItemLabel {
     fn wrap_label(&self, i: usize, id: Oco<'static, str>, item: impl IntoView) -> View {
-        let item_label = match self.item_label {
-            Some(item_label) => item_label,
-            None => return item.into_view(),
-        };
         view! {
-            <label for={id} class={item_label.class}>
-                {item_label.style.render(i)}{item_label.punctuation.render()}
+            <label for={id} class={self.class}>
+                {self.style.render(i)}{self.punctuation.render()}
                 {item}
             </label>
         }

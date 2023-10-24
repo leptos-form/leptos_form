@@ -14,5 +14,5 @@ quote.workspace = true
 syn.workspace = true
 
 [dev-dependencies]
-dissimilar = "1.0.4"
-prettyplease = "0.2"
+prettyplease.workspace = true
+pretty_assertions.workspace = true
