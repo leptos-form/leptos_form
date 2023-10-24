@@ -8,34 +8,49 @@ macro_rules! int_impl {
             type El = HtmlElement<Input>;
         }
 
-        impl FormSignalType<HtmlElement<Input>> for $ty {
+        impl FormField<HtmlElement<Input>> for $ty {
             type Config = ();
-            type SignalType = String;
-            fn into_signal_type(self, _: &Self::Config) -> Self::SignalType {
-                self.to_string()
+            type Signal = FormFieldSignal<String>;
+
+            fn default_signal() -> Self::Signal {
+                Default::default()
             }
-            fn try_from_signal_type(signal_type: Self::SignalType, _: &Self::Config) -> Result<Self, FormError> {
-                signal_type.parse().map_err(FormError::parse)
+            fn is_default_value(signal: &Self::Signal) -> bool {
+                signal.with(|x| x.value.is_empty())
+            }
+            fn into_signal(self, _: &Self::Config) -> Self::Signal {
+                Self::Signal::from(self.to_string())
+            }
+            fn try_from_signal(signal: Self::Signal, _: &Self::Config) -> Result<Self, FormError> {
+                signal.with(|x| x.value.parse()).map_err(FormError::parse)
+            }
+            fn with_error<O>(signal: &Self::Signal, f: impl FnOnce(Option<&FormError>) -> O) -> O {
+                signal.with(|x| f(x.error.as_ref()))
             }
         }
 
-        impl<T: 'static> FormComponent<T, HtmlElement<Input>> for $ty {
-            fn render(props: RenderProps<T, impl RefAccessor<T, Self::SignalType>, impl MutAccessor<T, Self::SignalType>, Self::Config>) -> impl IntoView {
-                props.signal.with(|t| {
-                    let value = (props.ref_ax)(t);
-                    view! {
-                        <input
-                            id={props.id.unwrap_or_else(|| props.name.clone())}
-                            name={props.name}
-                            class={props.class}
-                            type="number"
-                            min={$ty::MIN}
-                            max={$ty::MAX}
-                            value={value}
-                            on:change=setter(props.signal, props.mut_ax, |x| x.as_string())
-                        />
-                    }
-                })
+        impl FormComponent<HtmlElement<Input>> for $ty {
+            fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
+                view! {
+                    <input
+                        type="number"
+                        id={props.id.unwrap_or_else(|| props.name.clone())}
+                        name={props.name}
+                        class={props.class}
+                        min={$ty::MIN}
+                        max={$ty::MAX}
+                        value=move || props.signal.get().value
+                        prop:value={props.signal.0}
+                        on:input=move |ev| props.signal.0.update(|x| x.value = event_target_value(&ev))
+                        on:change=move |_| {
+                            if let Err(form_error) = <Self as FormField<HtmlElement<Input>>>::try_from_signal(props.signal, &props.config) {
+                                props.signal.update(|x| x.error = Some(form_error));
+                            } else if props.signal.with_untracked(|x| x.error.is_some()) {
+                                props.signal.update(|x| x.error = None);
+                            }
+                        }
+                    />
+                }
             }
         }
     )* };

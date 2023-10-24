@@ -1,11 +1,12 @@
 [package]
-name = "leptos-form-proc-macros-core"
+name = "leptos_form_proc_macros_core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 
 [dependencies]
 convert_case.workspace = true
+darling.workspace = true
 derive_more.workspace = true
 itertools.workspace = true
 proc-macro2.workspace = true
@@ -13,5 +14,5 @@ quote.workspace = true
 syn.workspace = true
 
 [dev-dependencies]
-dissimilar = "1.0.4"
-prettyplease = "0.2"
+prettyplease.workspace = true
+pretty_assertions.workspace = true

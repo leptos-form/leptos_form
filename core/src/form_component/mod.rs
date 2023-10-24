@@ -3,25 +3,41 @@ mod impls;
 pub use impls::*;
 
 use crate::*;
-use ::leptos::ev::Event;
 use ::leptos::*;
-use ::web_sys::EventTarget;
+use ::wasm_bindgen::JsValue;
 
-pub trait FormSignalType<El>: Sized {
-    type Config: Clone + Default;
-    type SignalType: Default + 'static;
-    fn into_signal_type(self, config: &Self::Config) -> Self::SignalType;
-    fn try_from_signal_type(signal_type: Self::SignalType, config: &Self::Config) -> Result<Self, FormError>;
+#[derive(AsRef, AsMut, Debug, Deref, DerefMut, Derivative, From, Into)]
+#[derivative(Clone(bound = ""), Copy(bound = ""))]
+pub struct FormFieldSignal<T: 'static>(pub RwSignal<FormFieldSignalValue<T>>);
+
+#[derive(Clone, Debug, Default)]
+pub struct FormFieldSignalValue<T> {
+    pub value: T,
+    pub error: Option<FormError>,
 }
-pub trait FormComponent<T: 'static, El>: FormSignalType<El> {
-    fn render(
-        props: RenderProps<
-            T,
-            impl RefAccessor<T, Self::SignalType>,
-            impl MutAccessor<T, Self::SignalType>,
-            Self::Config,
-        >,
-    ) -> impl IntoView;
+
+/// Provides utilities for a data type's form field representation.
+pub trait FormField<El>: Sized {
+    /// A configuration type which is used for mapping between Self and the underlying value of Self::Signal.
+    type Config: Clone + Default + 'static;
+    /// A RwSignal or wrapper type containing RwSignals which contains the underlying form value.
+    type Signal: Clone + 'static;
+
+    fn default_signal() -> Self::Signal;
+    fn is_default_value(signal: &Self::Signal) -> bool;
+    fn into_signal(self, config: &Self::Config) -> Self::Signal;
+    fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError>;
+    fn validate(_: Self::Signal) -> Result<(), FormError> {
+        Ok(())
+    }
+    #[allow(unused_variables)]
+    fn with_error<O>(signal: &Self::Signal, f: impl FnOnce(Option<&FormError>) -> O) -> O {
+        f(None)
+    }
+}
+
+pub trait FormComponent<El>: FormField<El> {
+    fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView;
 }
 
 pub trait DefaultHtmlElement {
@@ -30,91 +46,79 @@ pub trait DefaultHtmlElement {
 
 #[derive(Clone, Debug, TypedBuilder)]
 #[builder(field_defaults(setter(into)))]
-pub struct RenderProps<T: 'static, RefAx, MutAx, Config = ()> {
+pub struct RenderProps<T: 'static, Config = ()> {
     #[builder(default)]
     pub id: Option<Oco<'static, str>>,
     pub name: Oco<'static, str>,
     #[builder(default)]
     pub class: Option<Oco<'static, str>>,
-    pub signal: RwSignal<T>,
+    pub signal: T,
     pub config: Config,
-    #[builder(setter(!into))]
-    pub ref_ax: RefAx,
-    #[builder(setter(!into))]
-    pub mut_ax: MutAx,
 }
-
-pub trait RefAccessor<T, U>: Copy + Fn(&T) -> &U + 'static {}
-
-pub trait MutAccessor<T, U>: Copy + Fn(&mut T) -> &mut U + 'static {}
-
-#[doc(hidden)]
-pub fn setter<T: 'static, U>(
-    signal: RwSignal<T>,
-    mut_ax: impl MutAccessor<T, U>,
-    from_target: impl Copy + Fn(EventTarget) -> Option<U> + 'static,
-) -> impl Fn(Event) {
-    move |event| {
-        if let Some(val) = event.target().and_then(from_target) {
-            signal.update(|x| {
-                *mut_ax(x) = val;
-            })
-        }
-    }
-}
-
-#[doc(hidden)]
-pub fn ref_ax_factory<T, U>(ref_ax: impl RefAccessor<T, U>) -> impl RefAccessor<T, U> {
-    ref_ax
-}
-
-#[doc(hidden)]
-pub fn mut_ax_factory<T, U>(mut_ax: impl MutAccessor<T, U>) -> impl MutAccessor<T, U> {
-    mut_ax
-}
-
-impl<T, U, F: Copy + Fn(&T) -> &U + 'static> RefAccessor<T, U> for F {}
-
-impl<T, U, F: Copy + Fn(&mut T) -> &mut U + 'static> MutAccessor<T, U> for F {}
 
 impl<T: DefaultHtmlElement> DefaultHtmlElement for Option<T> {
     type El = T::El;
 }
 
-impl<U, El> FormSignalType<El> for Option<U>
+impl<U, El> FormField<El> for Option<U>
 where
-    U: FormSignalType<El>,
-    U::SignalType: Default + Eq,
+    U: FormField<El>,
 {
     type Config = U::Config;
-    type SignalType = U::SignalType;
-    fn into_signal_type(self, config: &Self::Config) -> Self::SignalType {
+    type Signal = U::Signal;
+
+    fn default_signal() -> Self::Signal {
+        U::default_signal()
+    }
+    fn is_default_value(signal: &Self::Signal) -> bool {
+        U::is_default_value(signal)
+    }
+    fn into_signal(self, config: &Self::Config) -> Self::Signal {
         match self {
-            Some(value) => U::into_signal_type(value, config),
-            None => U::SignalType::default(),
+            Some(value) => U::into_signal(value, config),
+            None => U::default_signal(),
         }
     }
-    fn try_from_signal_type(signal_type: Self::SignalType, config: &Self::Config) -> Result<Self, FormError> {
-        match signal_type == U::SignalType::default() {
+    fn with_error<O>(signal: &Self::Signal, f: impl FnOnce(Option<&FormError>) -> O) -> O {
+        U::with_error(signal, f)
+    }
+    fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError> {
+        match Self::is_default_value(&signal) {
             true => Ok(None),
-            false => Ok(Some(U::try_from_signal_type(signal_type, config)?)),
+            false => Ok(Some(U::try_from_signal(signal, config)?)),
         }
+    }
+    fn validate(signal: Self::Signal) -> Result<(), FormError> {
+        U::validate(signal)
     }
 }
 
-impl<T: 'static, El, U> FormComponent<T, El> for Option<U>
+impl<El, U> FormComponent<El> for Option<U>
 where
-    U: FormComponent<T, El>,
-    U::SignalType: Default + Eq,
+    U: FormComponent<El>,
 {
-    fn render(
-        props: RenderProps<
-            T,
-            impl RefAccessor<T, Self::SignalType>,
-            impl MutAccessor<T, Self::SignalType>,
-            Self::Config,
-        >,
-    ) -> impl IntoView {
+    fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
         U::render(props)
+    }
+}
+
+impl<T: Default + 'static> Default for FormFieldSignal<T> {
+    fn default() -> Self {
+        Self(create_rw_signal(Default::default()))
+    }
+}
+
+impl<T: 'static> From<T> for FormFieldSignal<T> {
+    fn from(value: T) -> Self {
+        Self(create_rw_signal(FormFieldSignalValue { value, error: None }))
+    }
+}
+
+impl<T> From<FormFieldSignalValue<T>> for JsValue
+where
+    JsValue: From<T>,
+{
+    fn from(value: FormFieldSignalValue<T>) -> JsValue {
+        JsValue::from(value.value)
     }
 }
