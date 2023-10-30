@@ -26,6 +26,12 @@ pub enum FormError {
     Parse(String),
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct FormDiff<T> {
+    pub initial: T,
+    pub current: T,
+}
+
 impl FormError {
     pub fn parse(err: impl ::std::fmt::Display) -> Self {
         Self::Parse(format!("{err}"))

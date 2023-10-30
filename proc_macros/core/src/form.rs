@@ -2,7 +2,7 @@
 
 use ::convert_case::*;
 use ::darling::{
-    ast::NestedMeta,
+    ast::{NestedMeta, Style},
     util::{Flag, SpannedValue},
     FromDeriveInput, FromField, FromMeta,
 };
@@ -13,9 +13,9 @@ use ::quote::{format_ident, quote, ToTokens, TokenStreamExt};
 use ::std::borrow::Cow;
 use ::std::ops::Deref;
 use ::syn::parse::{Error, Parse, ParseStream};
-use ::syn::parse2;
 use ::syn::punctuated::Punctuated;
 use ::syn::spanned::Spanned;
+use ::syn::{parse2, parse_str};
 
 #[derive(Clone, Debug, FromDeriveInput)]
 #[darling(
@@ -27,17 +27,19 @@ use ::syn::spanned::Spanned;
 struct FormOpts {
     action: Option<Action>,
     class: Option<syn::LitStr>,
-    component: Option<SpannedValue<Flag>>,
+    component: Option<ComponentConfig>,
     error: Option<SpannedValue<ErrorHandler>>,
     field_class: Option<syn::LitStr>,
     groups: Option<Groups>,
     internal: Option<bool>,
     id: Option<syn::LitStr>,
-    island: Option<SpannedValue<Flag>>,
+    island: Option<ComponentConfig>,
     label: Option<FormLabel>,
+    map_submit: Option<MapSubmit>,
     on_error: Option<syn::Expr>,
     on_success: Option<syn::Expr>,
     submit: Option<syn::Expr>,
+    wrapper: Option<bool>,
     vis: syn::Visibility,
     ident: syn::Ident,
     data: darling::ast::Data<(), SpannedValue<FormField>>,
@@ -45,13 +47,18 @@ struct FormOpts {
 
 impl FormOpts {
     fn one_component_kind(self) -> Result<Self, darling::Error> {
-        if self.component.unwrap_or_default().is_present() && self.island.unwrap_or_default().is_present() {
-            Err(darling::Error::custom("Cannot set component and island")
-                .with_span(&self.island.unwrap_or_default().span()))
+        if self.component.is_some() && self.island.is_some() {
+            Err(darling::Error::custom("Cannot set component and island").with_span(&self.island.unwrap().span()))
         } else {
             Ok(self)
         }
     }
+}
+
+#[derive(Clone, Debug)]
+struct ComponentConfig {
+    field: syn::Ident,
+    name: Option<syn::Ident>,
 }
 
 #[derive(Clone, Debug, Default, FromMeta, IsVariant)]
@@ -114,12 +121,15 @@ struct FormField {
     ty: syn::Type,
     class: Option<syn::LitStr>,
     config: Option<syn::Expr>,
-    el: Option<syn::Type>,
+    aysdfo: Option<Element>,
     error: Option<SpannedValue<ErrorHandler>>,
     group: Option<SpannedValue<usize>>,
     id: Option<syn::LitStr>,
     label: Option<FieldLabel>,
 }
+
+#[derive(Clone, Debug)]
+struct Element(syn::Type);
 
 #[derive(Clone, Debug, Default, FromMeta, IsVariant)]
 enum FieldLabel {
@@ -143,20 +153,69 @@ enum FieldLabel {
     },
 }
 
-impl FromMeta for Groups {
-    fn from_list(items: &[NestedMeta]) -> Result<Self, darling::Error> {
-        Ok(Self(
-            items
-                .iter()
-                .map(|item| match item {
-                    NestedMeta::Meta(meta) => Container::from_meta(meta),
-                    NestedMeta::Lit(lit) => {
-                        Err(darling::Error::custom("expected argument of the form `container(..)`")
-                            .with_span(&lit.span()))
-                    }
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        ))
+#[derive(Clone, Debug)]
+enum MapSubmit {
+    Defn(syn::ExprClosure),
+    Path(syn::Path),
+}
+
+#[derive(Clone, Copy, Debug, FromMeta)]
+enum LabelCase {
+    #[darling(rename = "camelCase")]
+    Camel,
+    #[darling(rename = "kebab-case")]
+    Kebab,
+    #[darling(rename = "lower case")]
+    Lower,
+    #[darling(rename = "PascalCase")]
+    Pascal,
+    #[darling(rename = "snake_case")]
+    Snake,
+    #[darling(rename = "Title Case")]
+    Title,
+    #[darling(rename = "Train-Case")]
+    Train,
+    #[darling(rename = "UPPER CASE")]
+    Upper,
+    #[darling(rename = "UPPER-KEBAB-CASE")]
+    UpperKebab,
+    #[darling(rename = "UPPER_SNAKE_CASE")]
+    UpperSnake,
+}
+
+impl ComponentConfig {
+    fn span(&self) -> Span {
+        self.field.span()
+    }
+}
+
+impl FromMeta for ComponentConfig {
+    fn from_meta(meta: &syn::Meta) -> Result<Self, darling::Error> {
+        let field = meta
+            .path()
+            .segments
+            .last()
+            .ok_or_else(|| darling::Error::custom("no path segment found").with_span(&meta.span()))?
+            .ident
+            .clone();
+
+        #[derive(Clone, Debug, FromMeta)]
+        struct Args {
+            name: Option<syn::Ident>,
+        }
+
+        let name = match meta {
+            syn::Meta::Path(_) => None,
+            syn::Meta::List(_) => {
+                let args = Args::from_meta(meta)?;
+                args.name
+            }
+            syn::Meta::NameValue(_) => {
+                return Err(darling::Error::custom("unexpected name/value meta attribute").with_span(&meta.span()))
+            }
+        };
+
+        Ok(Self { field, name })
     }
 }
 
@@ -230,63 +289,79 @@ impl FromMeta for Action {
     }
 }
 
-#[derive(Clone, Copy, Debug, FromMeta)]
-enum LabelCase {
-    #[darling(rename = "camelCase")]
-    Camel,
-    #[darling(rename = "kebab-case")]
-    Kebab,
-    #[darling(rename = "lower case")]
-    Lower,
-    #[darling(rename = "PascalCase")]
-    Pascal,
-    #[darling(rename = "snake_case")]
-    Snake,
-    #[darling(rename = "Title Case")]
-    Title,
-    #[darling(rename = "Train-Case")]
-    Train,
-    #[darling(rename = "UPPER CASE")]
-    Upper,
-    #[darling(rename = "UPPER-KEBAB-CASE")]
-    UpperKebab,
-    #[darling(rename = "UPPER_SNAKE_CASE")]
-    UpperSnake,
+impl FromMeta for Element {
+    fn from_string(value: &str) -> Result<Self, darling::Error> {
+        let ty: syn::Type = parse_str(value).map_err(darling::Error::custom)?;
+        Ok(Self(ty))
+    }
+}
+
+impl FromMeta for Groups {
+    fn from_list(items: &[NestedMeta]) -> Result<Self, darling::Error> {
+        Ok(Self(
+            items
+                .iter()
+                .map(|item| match item {
+                    NestedMeta::Meta(meta) => Container::from_meta(meta),
+                    NestedMeta::Lit(lit) => {
+                        Err(darling::Error::custom("expected argument of the form `container(..)`")
+                            .with_span(&lit.span()))
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        ))
+    }
+}
+
+impl FromMeta for MapSubmit {
+    fn from_expr(expr: &syn::Expr) -> Result<Self, darling::Error> {
+        use darling::Error;
+        Ok(match expr {
+            syn::Expr::Path(expr_path) => Self::Path(expr_path.path.clone()),
+            syn::Expr::Closure(expr_closure) => Self::Defn(expr_closure.clone()),
+            _ => return Err(Error::unexpected_expr_type(expr)),
+        })
+    }
 }
 
 pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
-    let form_opts = FormOpts::from_derive_input(&parse2(tokens)?)?;
+    let ast: syn::DeriveInput = parse2(tokens)?;
+    let form_opts = FormOpts::from_derive_input(&ast)?;
     let FormOpts {
         action,
         class: form_class,
         component,
+        data,
         error: form_error_handler,
         field_class,
         groups,
         id: form_id,
+        ident,
         internal,
         island,
         label: form_label,
+        map_submit,
         on_error,
         on_success,
         submit,
         vis,
-        ident,
-        data,
+        wrapper,
     } = form_opts;
 
+    let error_ident = format_ident!("error");
     let config_var_ident = format_ident!("config");
     let props_ident = format_ident!("props");
+
     let signal_ident = format_ident!("__{ident}Signal");
     let config_ident = format_ident!("__{ident}Config");
-    let error_ident = format_ident!("error");
 
     let form_label = form_label.unwrap_or_default();
     let is_internal = internal.unwrap_or_default();
+    let is_wrapper = wrapper.unwrap_or_default();
 
-    let component_ident = if component.unwrap_or_default().is_present() {
+    let component_ident = if component.is_some() {
         Some(format_ident!("component"))
-    } else if island.unwrap_or_default().is_present() {
+    } else if island.is_some() {
         Some(format_ident!("island"))
     } else {
         None
@@ -307,13 +382,73 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
     let fields = data.take_struct().unwrap();
 
-    let (field_groups, field_axs, field_tys, field_el_tys, configs, signal_field_idents): (
+    let (component_ty, signal_ty, config_ty) = if is_wrapper {
+        if fields.is_empty() {
+            return Err(Error::new(
+                Span::call_site(),
+                "cannot derive Form wrapper for type with zero fields",
+            ));
+        }
+        if fields.len() > 1 {
+            let mut span = fields.fields[1].span();
+            for field in fields.fields.iter().skip(2) {
+                span = span.join(field.span()).unwrap();
+            }
+            return Err(Error::new(
+                span,
+                "cannot derive Form wrapper for tuple structs with more than one field",
+            ));
+        }
+        if fields.style != Style::Tuple {
+            let span = match &ast.data {
+                syn::Data::Struct(data_struct) => match &data_struct.fields {
+                    syn::Fields::Named(fields_named) => fields_named.brace_token.span.join(),
+                    syn::Fields::Unit => ident.span(),
+                    syn::Fields::Unnamed(_) => unreachable!(),
+                },
+                syn::Data::Enum(_) | syn::Data::Union(_) => unreachable!(),
+            };
+            return Err(Error::new(span, "can only derive Form wrapper for tuple struct"));
+        }
+        let field = &*fields.fields[0];
+
+        match &field.ty {
+            syn::Type::Path(type_path) => {
+                let mut signal_type_path = type_path.clone();
+                let mut config_type_path = type_path.clone();
+
+                let end_path_segment = signal_type_path.path.segments.last_mut().unwrap();
+                end_path_segment.ident = format_ident!("__{}Signal", end_path_segment.ident);
+                end_path_segment.arguments = syn::PathArguments::None;
+
+                let end_path_segment = config_type_path.path.segments.last_mut().unwrap();
+                end_path_segment.ident = format_ident!("__{}Config", end_path_segment.ident);
+                end_path_segment.arguments = syn::PathArguments::None;
+
+                (
+                    syn::Type::Path(type_path.clone()),
+                    syn::Type::Path(signal_type_path),
+                    syn::Type::Path(config_type_path),
+                )
+            }
+            _ => return Err(Error::new_spanned(&field.ty, "wrapped field must be a path to a type")),
+        }
+    } else {
+        (
+            parse2(quote!(#ident))?,
+            parse2(quote!(#signal_ident))?,
+            parse2(quote!(#config_ident))?,
+        )
+    };
+
+    let (field_groups, field_axs, field_tys, field_el_tys, configs, signal_fields, config_fields): (
         Vec<_>,
         Vec<_>,
         Vec<_>,
         Vec<_>,
         Vec<_>,
-        Vec<_>,
+        Punctuated<syn::Field, syn::token::Comma>,
+        Punctuated<syn::Field, syn::token::Comma>,
     ) = fields
         .iter()
         .enumerate()
@@ -323,7 +458,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 .ident
                 .as_ref()
                 .map(|x| quote!(#x))
-                .unwrap_or_else(|| i.to_string().parse().unwrap());
+                .unwrap_or_else(|| parse_str(&i.to_string()).unwrap());
             let field_ty = &field.ty;
             let field_el_ty = field_el_ty(&leptos_form_krate, field);
 
@@ -334,13 +469,34 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 .unwrap()
             });
 
-            let signal_field_ident = if let Some(ident) = field.ident.clone() {
-                ident
-            } else {
-                format_ident!("_{i}")
+            let create_field = |ident: Option<syn::Ident>, ty: syn::Type| syn::Field {
+                attrs: Default::default(),
+                vis: syn::Visibility::Public(Default::default()),
+                mutability: syn::FieldMutability::None,
+                ident,
+                colon_token: Some(Default::default()),
+                ty,
             };
 
-            Ok((field.group, field_ax, field_ty, field_el_ty, config, signal_field_ident))
+            let field_signal_ty: syn::Type =
+                parse2(quote!(<#field_ty as #leptos_form_krate::FormField<#field_el_ty>>::Signal))?;
+            let field_config_ty: syn::Type =
+                parse2(quote!(<#field_ty as #leptos_form_krate::FormField<#field_el_ty>>::Config))?;
+
+            let (signal_field, config_field) = (
+                create_field(field.ident.clone(), field_signal_ty),
+                create_field(field.ident.clone(), field_config_ty),
+            );
+
+            Ok((
+                field.group,
+                field_ax,
+                field_ty,
+                field_el_ty,
+                config,
+                signal_field,
+                config_field,
+            ))
         })
         .collect::<Result<Vec<_>, Error>>()?
         .into_iter()
@@ -467,6 +623,35 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
     let component_tokens = component_ident
         .map(|component_ident| {
+            let data_ident = format_ident!("data");
+            let action_ident = format_ident!("action");
+            let initial_ident = format_ident!("initial");
+            let props_signal_ident = format_ident!("signal");
+            let parse_error_handler_ident = format_ident!("parse_error_handler");
+
+            let component_config = component.as_ref().or(island.as_ref()).unwrap();
+
+            let get_component_name_invalid_span = || match component_config.name.as_ref() {
+                None => Some(component_config.field.span()),
+                Some(name) => match *name == ident || *name == format_ident!("_{ident}") {
+                    true => Some(name.span()),
+                    false => None,
+                },
+            };
+            if fields.style == Style::Tuple {
+                if let Some(span) = get_component_name_invalid_span() {
+                    return Err(Error::new(
+                        span,
+                        format!(
+                            r#"deriving Form for a tuple struct with `{}` specified additionally requires a component name, consider using `{}(name = "{ident}_")`; note that "{ident}" cannot be used as the component name because {ident} is already an item defined in the function namespace and "_{ident}" should not be used because of leptos name transformations"#,
+                            component_config.field,
+                            component_config.field,
+                        ),
+                    ));
+                }
+            }
+            let component_name = component_config.name.as_ref().unwrap_or(&ident);
+
             let id = form_id.iter();
             let class = form_class.iter();
             let submit = submit.iter();
@@ -475,15 +660,28 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
             let props_id = form_id.as_ref().map(|id| quote!(#id)).unwrap_or_else(|| quote!(None));
 
-            let action_ident = format_ident!("action");
-            let props_signal_ident = format_ident!("signal");
-
-            let parse_error_handler_ident = format_ident!("parse_error_handler");
+            let map_submit = match map_submit {
+                Some(MapSubmit::Defn(closure_defn)) => {
+                    quote!(
+                        let map_submit = #closure_defn;
+                        let #data_ident = map_submit(#leptos_form_krate::FormDiff { initial: #initial_ident.clone(), current: #data_ident });
+                    )
+                },
+                Some(MapSubmit::Path(path)) => quote!(
+                    let #data_ident = map_submit(#leptos_form_krate::FormDiff { initial: #initial_ident.clone(), current: #data_ident });
+                ),
+                None => quote!(),
+            };
 
             let (tag_import, action_def, open_tag, close_tag, props_name) = match action {
                 Some(Action::Path { server_fn_path, arg, url }) => (
                     quote!(use #leptos_router_krate::Form;),
-                    Some(quote!(let #action_ident = #leptos_krate::create_action(|data: &#ident| #server_fn_path(data.clone()));)),
+                    Some(quote!(
+                        fn server_fn_inference<T: Clone, U>(f: impl Fn(T) -> U) -> impl Fn(&T) -> U {
+                            move |data: &T| f(data.clone())
+                        }
+                        let #action_ident = #leptos_krate::create_action(server_fn_inference(#server_fn_path));
+                    )),
                     {
                         let url = url.as_ref().map(|url| Ok(quote!(#url))).unwrap_or_else(|| {
                             let server_fn_ident = &server_fn_path.segments.last().ok_or_else(|| Error::new_spanned(&server_fn_path, "no function name found"))?.ident;
@@ -494,11 +692,14 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                         quote!(<Form action=#url #(id=#id)* #(class=#class)* on:submit=move |ev| {
                             use wasm_bindgen::UnwrapThrowExt;
                             ev.prevent_default();
-                            let data = match #props_signal_ident.with(|props| <#ident as FormField<#leptos_krate::View>>::try_from_signal(props.signal, &config)) {
+                            let #data_ident = match #props_signal_ident.with(|props| <#component_ty as #leptos_form_krate::FormField<#leptos_krate::View>>::try_from_signal(props.signal, &config)) {
                                 Ok(parsed) => parsed,
                                 Err(err) => return #parse_error_handler_ident(err),
                             };
-                            action.dispatch(data);
+
+                            #map_submit
+
+                            action.dispatch(#data_ident);
                         }>)
                     },
                     quote!(</Form>),
@@ -526,10 +727,21 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 #leptos_form_krate::RenderProps::builder()
                     .id(#props_id)
                     .name(#props_name)
-                    .signal(initial.clone().into_signal(&config))
+                    .signal(initial_clone.clone().into_signal(&config))
                     .config(config.clone())
                     .build()
             );
+
+            let (map_initial, config_def) = match is_wrapper {
+                true => (
+                    quote!(let #initial_ident = #initial_ident.0;),
+                    quote!(let config = #config_ty::default();),
+                ),
+                false => (
+                    quote!(),
+                    quote!(let config = #config_ty { #(#field_axs: #configs,)* };),
+                ),
+            };
 
             let pound = "#".parse::<TokenStream>().unwrap();
             let tokens = quote!(
@@ -544,10 +756,12 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                     use ::std::rc::Rc;
 
                     #pound[#leptos_krate::#component_ident]
-                    #vis fn #ident(initial: #ident) -> impl IntoView {
-                        #(#action_def)*
+                    #vis fn #component_name(#initial_ident: #ident) -> impl IntoView {
+                        #map_initial
+                        let initial_clone = initial.clone();
 
-                        let config = #config_ident { #(#field_axs: #configs,)* };
+                        #(#action_def)*
+                        #config_def
 
                         let #props_signal_ident = #leptos_krate::create_rw_signal(#props_builder);
 
@@ -555,7 +769,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
                         #leptos_krate::create_effect(move |_| {
                             if let Some(Ok(_)) = #action_ident.value().get() {
-                                let config = #config_ident { #(#field_axs: #configs,)* };
+                                #config_def
                                 let new_props = #props_builder;
                                 #props_signal_ident.update(move |x| *x = new_props);
                             }
@@ -563,7 +777,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
                         #leptos_krate::view! {
                             #open_tag
-                                {move || <#ident as #leptos_form_krate::FormComponent<#leptos_krate::View>>::render(#props_signal_ident.get())}
+                                {move || <#component_ty as #leptos_form_krate::FormComponent<#leptos_krate::View>>::render(#props_signal_ident.get())}
                                 #({#leptos_krate::#submit})*
                                 <FormSubmissionHandler
                                     action=#action_ident
@@ -579,24 +793,75 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         })
         .transpose()?;
 
+    if is_wrapper {
+        return component_tokens
+            .ok_or_else(|| Error::new(Span::call_site(), "expected Form to be a component or an island"));
+    }
+
+    let signal_struct_def = syn::ItemStruct {
+        attrs: vec![syn::Attribute {
+            pound_token: Default::default(),
+            style: syn::AttrStyle::Outer,
+            bracket_token: Default::default(),
+            meta: parse2(quote!(derive(Clone, Copy, Debug)))?,
+        }],
+        vis: syn::Visibility::Public(Default::default()),
+        struct_token: Default::default(),
+        ident: signal_ident.clone(),
+        fields: match fields.style {
+            Style::Tuple => syn::Fields::Unnamed(syn::FieldsUnnamed {
+                unnamed: signal_fields,
+                paren_token: Default::default(),
+            }),
+            Style::Struct => syn::Fields::Named(syn::FieldsNamed {
+                named: signal_fields,
+                brace_token: Default::default(),
+            }),
+            Style::Unit => syn::Fields::Unit,
+        },
+        // TODO: define generics on signal struct if supported in the future
+        generics: Default::default(),
+        semi_token: (fields.style == Style::Struct).then_some(Default::default()),
+    };
+
+    let config_struct_def = syn::ItemStruct {
+        attrs: vec![syn::Attribute {
+            pound_token: Default::default(),
+            style: syn::AttrStyle::Outer,
+            bracket_token: Default::default(),
+            meta: parse2(quote!(derive(Clone, Debug, Default)))?,
+        }],
+        vis: syn::Visibility::Public(Default::default()),
+        struct_token: Default::default(),
+        ident: config_ident.clone(),
+        fields: match fields.style {
+            Style::Tuple => syn::Fields::Unnamed(syn::FieldsUnnamed {
+                unnamed: config_fields,
+                paren_token: Default::default(),
+            }),
+            Style::Struct => syn::Fields::Named(syn::FieldsNamed {
+                named: config_fields,
+                brace_token: Default::default(),
+            }),
+            Style::Unit => syn::Fields::Unit,
+        },
+        // TODO: define generics on signal struct if supported in the future
+        generics: Default::default(),
+        semi_token: (fields.style == Style::Struct).then_some(Default::default()),
+    };
+
     let tokens = quote!(
-        #[derive(Clone, Copy, Debug)]
-        pub struct #signal_ident {
-            #(pub #signal_field_idents: <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::Signal,)*
-        }
+        #signal_struct_def
 
-        #[derive(Clone, Debug, Default)]
-        pub struct #config_ident {
-            #(pub #signal_field_idents: <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::Config,)*
-        }
+        #config_struct_def
 
-        impl ::core::convert::AsRef<#signal_ident> for #signal_ident {
+        impl ::core::convert::AsRef<#signal_ty> for #signal_ty {
             fn as_ref(&self) -> &Self {
                 self
             }
         }
 
-        impl ::core::convert::AsMut<#signal_ident> for #signal_ident {
+        impl ::core::convert::AsMut<#signal_ty> for #signal_ty {
             fn as_mut(&mut self) -> &mut Self {
                 self
             }
@@ -607,11 +872,11 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         }
 
         impl #leptos_form_krate::FormField<#leptos_krate::View> for #ident {
-            type Config = #config_ident;
-            type Signal = #signal_ident;
+            type Config = #config_ty;
+            type Signal = #signal_ty;
 
             fn default_signal() -> Self::Signal {
-                #signal_ident {
+                #signal_ty {
                     #(#field_axs: <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::default_signal() ,)*
                 }
             }
@@ -621,7 +886,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 )&&*
             }
             fn into_signal(self, #config_var_ident: &Self::Config) -> Self::Signal {
-                #signal_ident {
+                #signal_ty {
                     #(#field_axs: <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::into_signal(self.#field_axs, &#config_var_ident.#field_axs) ,)*
                 }
             }
@@ -654,8 +919,9 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 fn field_el_ty(leptos_form_krate: &syn::Path, field: &FormField) -> syn::Type {
     let ty = &field.ty;
     field
-        .el
+        .aysdfo
         .clone()
+        .map(|x| x.0)
         .unwrap_or_else(|| parse2(quote!(<#ty as #leptos_form_krate::DefaultHtmlElement>::El)).unwrap())
 }
 
@@ -1368,6 +1634,7 @@ mod test {
 
                 #[#leptos_krate::component]
                 pub fn MyFormData(initial: MyFormData) -> impl IntoView {
+                    let initial_clone = initial.clone();
                     let config = __MyFormDataConfig {
                         ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
                     };
@@ -1375,7 +1642,7 @@ mod test {
                     let signal = #leptos_krate::create_rw_signal(#leptos_form_krate::RenderProps::builder()
                         .id(None)
                         .name("")
-                        .signal(initial.clone().into_signal(&config))
+                        .signal(initial_clone.clone().into_signal(&config))
                         .config(config.clone())
                         .build()
                     );
@@ -1388,7 +1655,7 @@ mod test {
                             let new_props = #leptos_form_krate::RenderProps::builder()
                                 .id(None)
                                 .name("")
-                                .signal(initial.clone().into_signal(&config))
+                                .signal(initial_clone.clone().into_signal(&config))
                                 .config(config.clone())
                                 .build();
                             signal.update(move |x| *x = new_props);
