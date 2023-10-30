@@ -39,7 +39,6 @@ struct FormOpts {
     on_error: Option<syn::Expr>,
     on_success: Option<syn::Expr>,
     submit: Option<syn::Expr>,
-    wrapper: Option<bool>,
     vis: syn::Visibility,
     ident: syn::Ident,
     data: darling::ast::Data<(), SpannedValue<FormField>>,
@@ -351,7 +350,6 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         on_success,
         submit,
         vis,
-        wrapper,
     } = form_opts;
 
     let error_ident = format_ident!("error");
@@ -363,7 +361,6 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
     let form_label = form_label.unwrap_or_default();
     let is_internal = internal.unwrap_or_default();
-    let is_wrapper = wrapper.unwrap_or_default();
 
     let component_ident = if component.is_some() {
         Some(format_ident!("component"))
@@ -388,64 +385,9 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
     let fields = data.take_struct().unwrap();
 
-    let (component_ty, signal_ty, config_ty) = if is_wrapper {
-        if fields.is_empty() {
-            return Err(Error::new(
-                Span::call_site(),
-                "cannot derive Form wrapper for type with zero fields",
-            ));
-        }
-        if fields.len() > 1 {
-            let mut span = fields.fields[1].span();
-            for field in fields.fields.iter().skip(2) {
-                span = span.join(field.span()).unwrap();
-            }
-            return Err(Error::new(
-                span,
-                "cannot derive Form wrapper for tuple structs with more than one field",
-            ));
-        }
-        if fields.style != Style::Tuple {
-            let span = match &ast.data {
-                syn::Data::Struct(data_struct) => match &data_struct.fields {
-                    syn::Fields::Named(fields_named) => fields_named.brace_token.span.join(),
-                    syn::Fields::Unit => ident.span(),
-                    syn::Fields::Unnamed(_) => unreachable!(),
-                },
-                syn::Data::Enum(_) | syn::Data::Union(_) => unreachable!(),
-            };
-            return Err(Error::new(span, "can only derive Form wrapper for tuple struct"));
-        }
-        let field = &*fields.fields[0];
-
-        match &field.ty {
-            syn::Type::Path(type_path) => {
-                let mut signal_type_path = type_path.clone();
-                let mut config_type_path = type_path.clone();
-
-                let end_path_segment = signal_type_path.path.segments.last_mut().unwrap();
-                end_path_segment.ident = format_ident!("__{}Signal", end_path_segment.ident);
-                end_path_segment.arguments = syn::PathArguments::None;
-
-                let end_path_segment = config_type_path.path.segments.last_mut().unwrap();
-                end_path_segment.ident = format_ident!("__{}Config", end_path_segment.ident);
-                end_path_segment.arguments = syn::PathArguments::None;
-
-                (
-                    syn::Type::Path(type_path.clone()),
-                    syn::Type::Path(signal_type_path),
-                    syn::Type::Path(config_type_path),
-                )
-            }
-            _ => return Err(Error::new_spanned(&field.ty, "wrapped field must be a path to a type")),
-        }
-    } else {
-        (
-            parse2(quote!(#ident))?,
-            parse2(quote!(#signal_ident))?,
-            parse2(quote!(#config_ident))?,
-        )
-    };
+    let component_ty = ident.clone();
+    let signal_ty = signal_ident.clone();
+    let config_ty = config_ident.clone();
 
     let (field_groups, field_axs, field_tys, field_el_tys, configs, signal_fields, config_fields): (
         Vec<_>,
@@ -738,16 +680,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                     .build()
             );
 
-            let (map_initial, config_def) = match is_wrapper {
-                true => (
-                    quote!(let #initial_ident = #initial_ident.0;),
-                    quote!(let config = #config_ty::default();),
-                ),
-                false => (
-                    quote!(),
-                    quote!(let config = #config_ty { #(#field_axs: #configs,)* };),
-                ),
-            };
+            let config_def = quote!(let config = #config_ty { #(#field_axs: #configs,)* };);
 
             let optional_reset_on_success_effect = match component_config.reset_on_success.unwrap_or_default() {
                 true => quote!(
@@ -776,7 +709,6 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
                     #pound[#leptos_krate::#component_ident]
                     #vis fn #component_name(#initial_ident: #ident) -> impl IntoView {
-                        #map_initial
                         let initial_clone = initial.clone();
 
                         #(#action_def)*
@@ -805,11 +737,6 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             Ok(tokens)
         })
         .transpose()?;
-
-    if is_wrapper {
-        return component_tokens
-            .ok_or_else(|| Error::new(Span::call_site(), "expected Form to be a component or an island"));
-    }
 
     let signal_struct_def = syn::ItemStruct {
         attrs: vec![syn::Attribute {
