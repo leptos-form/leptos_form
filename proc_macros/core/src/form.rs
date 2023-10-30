@@ -59,6 +59,7 @@ struct ComponentConfigSpanned {
 #[derive(Clone, Debug, Default, FromMeta)]
 struct ComponentConfig {
     action: Option<Action>,
+    field_changed_class: Option<syn::LitStr>,
     map_submit: Option<MapSubmit>,
     name: Option<syn::Ident>,
     on_error: Option<syn::Expr>,
@@ -472,6 +473,13 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
             let rendered_error = render_error(&leptos_krate, form_error_handler.as_ref(), field.error.as_ref(), &error_ident)?;
 
+            let field_changed_class = component
+                .as_ref()
+                .or(island.as_ref())
+                .and_then(|x| x.spanned.field_changed_class.as_ref())
+                .map(|field_changed_class| quote!(#leptos_krate::Oco::Borrowed(#field_changed_class)))
+                .unwrap_or_else(|| quote!(#props_ident.field_changed_class.clone()));
+
             Ok((
                 quote!(
                     let #field_id_ident = #leptos_form_krate::format_form_id(
@@ -485,7 +493,8 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                     let #build_props_ident = #leptos_form_krate::RenderProps::builder()
                         .id(#field_id_ident.clone())
                         .name(#field_name_ident.clone())
-                        #(.class(Oco::Borrowed(#class)))*
+                        #(.class(#leptos_krate::Oco::Borrowed(#class)))*
+                        .field_changed_class(#field_changed_class)
                         .signal(#props_ident.signal.#field_ax.clone())
                         .config(#config)
                         .build();
@@ -497,7 +506,9 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                         },
                         None => #leptos_krate::View::default(),
                     });
-                    let #field_view_ident = move || <#field_ty as #leptos_form_krate::FormComponent<#field_el_ty>>::render(#build_props_ident.clone());
+
+                    let ty = <std::marker::PhantomData<(#field_ty, #field_el_ty)> as Default>::default();
+                    let #field_view_ident = #leptos_krate::view! { <FormField props=#build_props_ident ty=ty /> };
                 ),
                 build_props_ident,
                 field_id_ident,
@@ -582,8 +593,9 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             }
             let ComponentConfig {
                 action,
-                name: component_name,
+                field_changed_class,
                 map_submit,
+                name: component_name,
                 on_error,
                 on_success,
                 reset_on_success,
@@ -596,6 +608,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             let submit = submit.iter();
             let on_error = on_error.iter();
             let on_success = on_success.iter();
+            let field_changed_class = field_changed_class.iter();
 
             let data_ident = format_ident!("data");
             let action_ident = format_ident!("action");
@@ -669,11 +682,12 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             let mod_ident = format_ident!("{}", format!("leptos_form_component_{ident}").to_case(Case::Snake));
 
             let props_builder = quote!(
-                #leptos_form_krate::RenderProps::builder()
+                #leptos_form_krate::RenderProps::<#signal_ty, #config_ty>::builder()
                     .id(#props_id)
                     .name(#props_name)
-                    .signal(initial_clone.clone().into_signal(&config))
+                    .signal(initial.clone().into_signal(&config))
                     .config(config.clone())
+                    #(.field_changed_class(#leptos_krate::Oco::Borrowed(#field_changed_class)))*
                     .build()
             );
 
@@ -681,15 +695,24 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
             let optional_reset_on_success_effect = match reset_on_success.unwrap_or_default() {
                 true => quote!(
-                    #leptos_krate::create_effect(move |_| {
-                        if let Some(Ok(_)) = #action_ident.value().get() {
-                            #config_def
-                            let new_props = #props_builder;
-                            #props_signal_ident.update(move |x| *x = new_props);
+                    #leptos_krate::create_effect({
+                        let initial = initial.clone();
+                        move |_| {
+                            if let Some(Ok(_)) = #action_ident.value().get() {
+                                #config_def
+                                let new_props = #props_builder;
+                                #props_signal_ident.update(move |props| *props = new_props);
+                            }
                         }
                     });
                 ),
-                false => quote!(),
+                false => quote!(
+                    #leptos_krate::create_effect(move |_| {
+                        if let Some(Ok(_)) = #action_ident.value().get() {
+                            #props_signal_ident.with(|props| #ident::reset_initial_value(&props.signal));
+                        }
+                    });
+                ),
             };
 
             let pound = "#".parse::<TokenStream>().unwrap();
@@ -706,8 +729,6 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
                     #pound[#leptos_krate::#component_ident]
                     #vis fn #component_name(#initial_ident: #ident) -> impl IntoView {
-                        let initial_clone = initial.clone();
-
                         #(#action_def)*
                         #config_def
 
@@ -717,9 +738,11 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
                         #optional_reset_on_success_effect
 
+                        let ty = <std::marker::PhantomData<(#ident, #leptos_krate::View)> as Default>::default();
+
                         #leptos_krate::view! {
                             #open_tag
-                                {move || <#component_ty as #leptos_form_krate::FormComponent<#leptos_krate::View>>::render(#props_signal_ident.get())}
+                                {move || view! { <FormField props=#props_signal_ident.get() ty=ty /> }}
                                 #({#leptos_krate::#submit})*
                                 <FormSubmissionHandler
                                     action=#action_ident
@@ -832,11 +855,15 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                     #(#field_axs: <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::try_from_signal(signal.#field_axs, &#config_var_ident.#field_axs)? ,)*
                 })
             }
+            fn reset_initial_value(signal: &Self::Signal) {
+                #(<#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::reset_initial_value(&signal.#field_axs);)*
+            }
         }
 
         impl #leptos_form_krate::FormComponent<#leptos_krate::View> for #ident {
             #[allow(unused_imports)]
             fn render(#props_ident: #leptos_form_krate::RenderProps<Self::Signal, Self::Config>) -> impl #leptos_krate::IntoView {
+                use #leptos_form_krate::FormField;
                 use #leptos_krate::{IntoAttribute, IntoView};
 
                 #(#build_props)*
@@ -1207,7 +1234,7 @@ mod test {
                             None => #leptos_krate::View::default(),
                         },
                     );
-                    let _id_view = move || <Uuid as #leptos_form_krate::FormComponent<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_id_props.clone());
+                    let _id_view = <Uuid as #leptos_form_krate::FormComponent<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_id_props.clone());
 
                     let _slug_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "slug");
                     let _slug_name = #leptos_form_krate::format_form_name(Some(&props.name), "slug");
@@ -1229,7 +1256,7 @@ mod test {
                             None => #leptos_krate::View::default(),
                         },
                     );
-                    let _slug_view = move || <String as #leptos_form_krate::FormComponent<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_slug_props.clone());
+                    let _slug_view = <String as #leptos_form_krate::FormComponent<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_slug_props.clone());
 
                     let _created_at_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "created-at");
                     let _created_at_name = #leptos_form_krate::format_form_name(Some(&props.name), "created_at");
@@ -1250,7 +1277,7 @@ mod test {
                             None => #leptos_krate::View::default(),
                         },
                     );
-                    let _created_at_view = move || <chrono::NaiveDateTime as #leptos_form_krate::FormComponent<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_created_at_props.clone());
+                    let _created_at_view = <chrono::NaiveDateTime as #leptos_form_krate::FormComponent<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_created_at_props.clone());
 
                     let _count_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "count");
                     let _count_name = #leptos_form_krate::format_form_name(Some(&props.name), "count");
@@ -1271,7 +1298,7 @@ mod test {
                             None => #leptos_krate::View::default(),
                         },
                     );
-                    let _count_view = move || <u8 as #leptos_form_krate::FormComponent<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_count_props.clone());
+                    let _count_view = <u8 as #leptos_form_krate::FormComponent<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_count_props.clone());
 
                     #leptos_krate::view! {
                         <label for={_id_id}>
@@ -1394,7 +1421,7 @@ mod test {
                     let _abc_123_props = #leptos_form_krate::RenderProps::builder()
                         .id(_abc_123_id.clone())
                         .name(_abc_123_name.clone())
-                        .class(Oco::Borrowed("hi"))
+                        .class(#leptos_krate::Oco::Borrowed("hi"))
                         .signal(props.signal.abc_123.clone())
                         .config(<Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
                         .build();
@@ -1409,7 +1436,7 @@ mod test {
                             None => #leptos_krate::View::default(),
                         },
                     );
-                    let _abc_123_view = move || <Uuid as #leptos_form_krate::FormComponent<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_abc_123_props.clone());
+                    let _abc_123_view = <Uuid as #leptos_form_krate::FormComponent<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_abc_123_props.clone());
 
                     let _zz_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "zz");
                     let _zz_name = #leptos_form_krate::format_form_name(Some(&props.name), "zz");
@@ -1430,7 +1457,7 @@ mod test {
                             None => #leptos_krate::View::default(),
                         },
                     );
-                    let _zz_view = move || <u8 as #leptos_form_krate::FormComponent<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_zz_props.clone());
+                    let _zz_view = <u8 as #leptos_form_krate::FormComponent<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_zz_props.clone());
 
                     #leptos_krate::view! {
                         <label for={_abc_123_id} class="test">
@@ -1547,7 +1574,7 @@ mod test {
                             None => #leptos_krate::View::default(),
                         }
                     );
-                    let _ayo_view = move || <u8 as #leptos_form_krate::FormComponent<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_ayo_props.clone());
+                    let _ayo_view = <u8 as #leptos_form_krate::FormComponent<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::render(_ayo_props.clone());
 
                     #leptos_krate::view! {
                         <label for={_ayo_id}>
@@ -1600,7 +1627,7 @@ mod test {
                     });
                     #leptos_krate::view! {
                         <Form action="/api/my-form-data">
-                            {move || <MyFormData as #leptos_form_krate::FormComponent<#leptos_krate::View>>::render(signal.get())}
+                            {<MyFormData as #leptos_form_krate::FormComponent<#leptos_krate::View>>::render(signal.get())}
                             <FormSubmissionHandler action=action />
                         </Form>
                     }

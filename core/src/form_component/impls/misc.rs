@@ -3,6 +3,7 @@
 use crate::*;
 use ::leptos::html::*;
 use ::leptos::*;
+use ::wasm_bindgen::JsValue;
 
 #[cfg(feature = "uuid")]
 impl DefaultHtmlElement for ::uuid::Uuid {
@@ -29,6 +30,9 @@ impl FormField<HtmlElement<Input>> for ::uuid::Uuid {
             .with(|x| ::uuid::Uuid::from_str(&x.value))
             .map_err(FormError::parse)
     }
+    fn reset_initial_value(signal: &Self::Signal) {
+        signal.update(|sig| sig.initial = Some(sig.value.clone()));
+    }
     fn with_error<O>(signal: &Self::Signal, f: impl FnOnce(Option<&FormError>) -> O) -> O {
         signal.with(|x| f(x.error.as_ref()))
     }
@@ -37,12 +41,14 @@ impl FormField<HtmlElement<Input>> for ::uuid::Uuid {
 #[cfg(feature = "uuid")]
 impl FormComponent<HtmlElement<Input>> for ::uuid::Uuid {
     fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
+        let class = props.class_signal();
         view! {
             <input
                 type="text"
                 id={props.id.unwrap_or_else(|| props.name.clone())}
                 name={props.name}
-                class={props.class}
+                class={class}
+                prop:class={move || class.with(|x| x.as_ref().map(|x| JsValue::from_str(x)))}
                 value=move || props.signal.get().value
                 prop:value={props.signal.0}
                 on:input=move |ev| props.signal.0.update(|x| x.value = event_target_value(&ev))
@@ -131,6 +137,9 @@ cfg_if! { if #[cfg(feature = "chrono")] {
                 fn into_signal(self, config: &Self::Config) -> Self::Signal {
                     Self::Signal::from(self.format(config.format).to_string())
                 }
+                fn reset_initial_value(signal: &Self::Signal) {
+                    signal.update(|sig| sig.initial = Some(sig.value.clone()));
+                }
                 fn with_error<O>(signal: &Self::Signal, f: impl FnOnce(Option<&FormError>) -> O) -> O {
                     signal.with(|x| f(x.error.as_ref()))
                 }
@@ -140,12 +149,14 @@ cfg_if! { if #[cfg(feature = "chrono")] {
 
             impl FormComponent<HtmlElement<Input>> for $ty {
                 fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
+                    let class = props.class_signal();
                     view! {
                         <input
                             type="text"
                             id={props.id.unwrap_or_else(|| props.name.clone())}
                             name={props.name}
-                            class={props.class}
+                            class={class}
+                            prop:class={move || class.with(|x| x.as_ref().map(|x| JsValue::from_str(&*x)))}
                             value=move || props.signal.get().value
                             prop:value={props.signal.0}
                             on:input=move |ev| props.signal.0.update(|x| x.value = event_target_value(&ev))

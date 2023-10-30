@@ -132,15 +132,20 @@ where
                 .collect()
         })
     }
+    fn reset_initial_value(signal: &Self::Signal) {
+        signal.update(|sig| {
+            sig.iter().for_each(|sig| U::reset_initial_value(&sig.signal));
+        });
+    }
     fn with_error<O>(_: &Self::Signal, f: impl FnOnce(Option<&FormError>) -> O) -> O {
         f(None)
     }
 }
 
-impl<U, El> FormComponent<Vec<El>> for Vec<U>
+impl<U, El, S> FormComponent<Vec<El>> for Vec<U>
 where
-    U: FormComponent<El>,
-    <U as FormField<El>>::Signal: Clone + std::fmt::Debug,
+    U: FormComponent<El, Signal = FormFieldSignal<S>>,
+    S: Clone + Eq + 'static,
 {
     fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
         let (min_items, max_items) = props.config.items.split();
@@ -192,33 +197,35 @@ where
                 each=move || props.signal.get()
                 children=move |item| {
                     let id = crate::format_form_id(props.id.as_ref(), item.index.to_string());
+
                     let item_props = RenderProps::builder()
                         .id(id.clone())
                         .name(crate::format_form_name(Some(&props.name), item.index.to_string()))
                         .class(item_class.map(Oco::Borrowed).or_else(|| props.class.clone()))
+                        .field_changed_class(props.field_changed_class.clone())
                         .signal(item.signal)
                         .config(item_config.clone())
                         .build();
 
-                        VecConfig::<<U as FormField<El>>::Config>::wrap(
-                            &items,
-                            item_class,
-                            item_label.as_ref(),
-                            &remove,
-                            props.signal,
-                            item.index,
-                            id,
-                            <U as FormComponent<El>>::render(item_props),
-                        ).into_view()
+                    VecConfig::<<U as FormField<El>>::Config>::wrap(
+                        &items,
+                        item_class,
+                        item_label.as_ref(),
+                        &remove,
+                        props.signal,
+                        item.index,
+                        id,
+                        <U as FormComponent<El>>::render(item_props),
+                    ).into_view()
                 }
             />
             {move || {
                 let num_items = props.signal.with(|items| items.len());
                 if num_items < max_items.unwrap_or(usize::MAX) {
                     let on_add = move |_| props.signal.update(|items| {
-                            let id = next_id.get_untracked();
-                            items.push(VecSignalItem { id, index: items.len(), signal: U::default_signal() });
-                            next_id.update(|x| *x = id + 1);
+                        let id = next_id.get_untracked();
+                        items.push(VecSignalItem { id, index: items.len(), signal: U::default_signal() });
+                        next_id.update(|x| *x = id + 1);
                     });
 
                     match &add {

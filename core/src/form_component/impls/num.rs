@@ -1,6 +1,7 @@
 use crate::*;
 use ::leptos::html::*;
 use ::leptos::*;
+use ::wasm_bindgen::JsValue;
 
 macro_rules! int_impl {
     ($($ty:ty),*$(,)?) => { $(
@@ -24,6 +25,9 @@ macro_rules! int_impl {
             fn try_from_signal(signal: Self::Signal, _: &Self::Config) -> Result<Self, FormError> {
                 signal.with(|x| x.value.parse()).map_err(FormError::parse)
             }
+            fn reset_initial_value(signal: &Self::Signal) {
+                signal.update(|sig| sig.initial = Some(sig.value.clone()));
+            }
             fn with_error<O>(signal: &Self::Signal, f: impl FnOnce(Option<&FormError>) -> O) -> O {
                 signal.with(|x| f(x.error.as_ref()))
             }
@@ -31,14 +35,16 @@ macro_rules! int_impl {
 
         impl FormComponent<HtmlElement<Input>> for $ty {
             fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
+                let class = props.class_signal();
                 view! {
                     <input
                         type="number"
                         id={props.id.unwrap_or_else(|| props.name.clone())}
                         name={props.name}
-                        class={props.class}
                         min={$ty::MIN}
                         max={$ty::MAX}
+                        class={class}
+                        prop:class={move || class.with(|x| x.as_ref().map(|x| JsValue::from_str(&*x)))}
                         value=move || props.signal.get().value
                         prop:value={props.signal.0}
                         on:input=move |ev| props.signal.0.update(|x| x.value = event_target_value(&ev))
