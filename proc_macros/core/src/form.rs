@@ -59,6 +59,7 @@ impl FormOpts {
 struct ComponentConfig {
     field: syn::Ident,
     name: Option<syn::Ident>,
+    reset_on_success: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, FromMeta, IsVariant)]
@@ -202,20 +203,25 @@ impl FromMeta for ComponentConfig {
         #[derive(Clone, Debug, FromMeta)]
         struct Args {
             name: Option<syn::Ident>,
+            reset_on_success: Option<bool>,
         }
 
-        let name = match meta {
-            syn::Meta::Path(_) => None,
+        let (name, reset_on_success) = match meta {
+            syn::Meta::Path(_) => (None, None),
             syn::Meta::List(_) => {
                 let args = Args::from_meta(meta)?;
-                args.name
+                (args.name, args.reset_on_success)
             }
             syn::Meta::NameValue(_) => {
                 return Err(darling::Error::custom("unexpected name/value meta attribute").with_span(&meta.span()))
             }
         };
 
-        Ok(Self { field, name })
+        Ok(Self {
+            field,
+            name,
+            reset_on_success,
+        })
     }
 }
 
@@ -743,6 +749,19 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 ),
             };
 
+            let optional_reset_on_success_effect = match component_config.reset_on_success.unwrap_or_default() {
+                true => quote!(
+                    #leptos_krate::create_effect(move |_| {
+                        if let Some(Ok(_)) = #action_ident.value().get() {
+                            #config_def
+                            let new_props = #props_builder;
+                            #props_signal_ident.update(move |x| *x = new_props);
+                        }
+                    });
+                ),
+                false => quote!(),
+            };
+
             let pound = "#".parse::<TokenStream>().unwrap();
             let tokens = quote!(
                 #vis use #mod_ident::*;
@@ -767,13 +786,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
                         let #parse_error_handler_ident = |err: #leptos_form_krate::FormError| logging::debug_warn!("{err}");
 
-                        #leptos_krate::create_effect(move |_| {
-                            if let Some(Ok(_)) = #action_ident.value().get() {
-                                #config_def
-                                let new_props = #props_builder;
-                                #props_signal_ident.update(move |x| *x = new_props);
-                            }
-                        });
+                        #optional_reset_on_success_effect
 
                         #leptos_krate::view! {
                             #open_tag
@@ -1525,7 +1538,7 @@ mod test {
     fn test3() -> Result<(), Error> {
         let input = quote!(
             #[derive(Form)]
-            #[form(action = "/api/my-form-data", component)]
+            #[form(action = "/api/my-form-data", component(reset_on_success))]
             pub struct MyFormData {
                 pub ayo: u8,
             }
