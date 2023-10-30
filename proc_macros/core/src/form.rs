@@ -25,20 +25,16 @@ use ::syn::{parse2, parse_str};
     and_then = "Self::one_component_kind"
 )]
 struct FormOpts {
-    action: Option<Action>,
     class: Option<syn::LitStr>,
-    component: Option<ComponentConfig>,
+    component: Option<ComponentConfigSpanned>,
     error: Option<SpannedValue<ErrorHandler>>,
     field_class: Option<syn::LitStr>,
     groups: Option<Groups>,
     internal: Option<bool>,
     id: Option<syn::LitStr>,
-    island: Option<ComponentConfig>,
+    island: Option<ComponentConfigSpanned>,
     label: Option<FormLabel>,
-    map_submit: Option<MapSubmit>,
-    on_error: Option<syn::Expr>,
-    on_success: Option<syn::Expr>,
-    submit: Option<syn::Expr>,
+    // forwarded fields
     vis: syn::Visibility,
     ident: syn::Ident,
     data: darling::ast::Data<(), SpannedValue<FormField>>,
@@ -55,10 +51,20 @@ impl FormOpts {
 }
 
 #[derive(Clone, Debug)]
-struct ComponentConfig {
+struct ComponentConfigSpanned {
     field: syn::Ident,
+    spanned: ComponentConfig,
+}
+
+#[derive(Clone, Debug, Default, FromMeta)]
+struct ComponentConfig {
+    action: Option<Action>,
+    map_submit: Option<MapSubmit>,
     name: Option<syn::Ident>,
+    on_error: Option<syn::Expr>,
+    on_success: Option<syn::Expr>,
     reset_on_success: Option<bool>,
+    submit: Option<syn::Expr>,
 }
 
 #[derive(Clone, Debug, Default, FromMeta, IsVariant)]
@@ -116,16 +122,17 @@ enum Action {
 #[derive(Clone, Debug, FromField)]
 #[darling(attributes(form))]
 struct FormField {
-    vis: syn::Visibility,
-    ident: Option<syn::Ident>,
-    ty: syn::Type,
     class: Option<syn::LitStr>,
     config: Option<syn::Expr>,
-    aysdfo: Option<Element>,
+    el: Option<Element>,
     error: Option<SpannedValue<ErrorHandler>>,
     group: Option<SpannedValue<usize>>,
     id: Option<syn::LitStr>,
     label: Option<FieldLabel>,
+    // forwarded fields
+    vis: syn::Visibility,
+    ident: Option<syn::Ident>,
+    ty: syn::Type,
 }
 
 #[derive(Clone, Debug)]
@@ -183,13 +190,13 @@ enum LabelCase {
     UpperSnake,
 }
 
-impl ComponentConfig {
+impl ComponentConfigSpanned {
     fn span(&self) -> Span {
         self.field.span()
     }
 }
 
-impl FromMeta for ComponentConfig {
+impl FromMeta for ComponentConfigSpanned {
     fn from_meta(meta: &syn::Meta) -> Result<Self, darling::Error> {
         let field = meta
             .path()
@@ -199,28 +206,15 @@ impl FromMeta for ComponentConfig {
             .ident
             .clone();
 
-        #[derive(Clone, Debug, FromMeta)]
-        struct Args {
-            name: Option<syn::Ident>,
-            reset_on_success: Option<bool>,
-        }
-
-        let (name, reset_on_success) = match meta {
-            syn::Meta::Path(_) => (None, None),
-            syn::Meta::List(_) => {
-                let args = Args::from_meta(meta)?;
-                (args.name, args.reset_on_success)
-            }
+        let spanned = match meta {
+            syn::Meta::Path(_) => Default::default(),
+            syn::Meta::List(_) => ComponentConfig::from_meta(meta)?,
             syn::Meta::NameValue(_) => {
                 return Err(darling::Error::custom("unexpected name/value meta attribute").with_span(&meta.span()))
             }
         };
 
-        Ok(Self {
-            field,
-            name,
-            reset_on_success,
-        })
+        Ok(Self { field, spanned })
     }
 }
 
@@ -333,7 +327,6 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
     let ast: syn::DeriveInput = parse2(tokens)?;
     let form_opts = FormOpts::from_derive_input(&ast)?;
     let FormOpts {
-        action,
         class: form_class,
         component,
         data,
@@ -345,10 +338,6 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         internal,
         island,
         label: form_label,
-        map_submit,
-        on_error,
-        on_success,
-        submit,
         vis,
     } = form_opts;
 
@@ -571,15 +560,8 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
     let component_tokens = component_ident
         .map(|component_ident| {
-            let data_ident = format_ident!("data");
-            let action_ident = format_ident!("action");
-            let initial_ident = format_ident!("initial");
-            let props_signal_ident = format_ident!("signal");
-            let parse_error_handler_ident = format_ident!("parse_error_handler");
-
             let component_config = component.as_ref().or(island.as_ref()).unwrap();
-
-            let get_component_name_invalid_span = || match component_config.name.as_ref() {
+            let get_component_name_invalid_span = || match component_config.spanned.name.as_ref() {
                 None => Some(component_config.field.span()),
                 Some(name) => match *name == ident || *name == format_ident!("_{ident}") {
                     true => Some(name.span()),
@@ -598,13 +580,28 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                     ));
                 }
             }
-            let component_name = component_config.name.as_ref().unwrap_or(&ident);
+            let ComponentConfig {
+                action,
+                name: component_name,
+                map_submit,
+                on_error,
+                on_success,
+                reset_on_success,
+                submit,
+            } = &component_config.spanned;
 
+            let component_name = component_name.as_ref().unwrap_or(&ident);
             let id = form_id.iter();
             let class = form_class.iter();
             let submit = submit.iter();
             let on_error = on_error.iter();
             let on_success = on_success.iter();
+
+            let data_ident = format_ident!("data");
+            let action_ident = format_ident!("action");
+            let initial_ident = format_ident!("initial");
+            let props_signal_ident = format_ident!("signal");
+            let parse_error_handler_ident = format_ident!("parse_error_handler");
 
             let props_id = form_id.as_ref().map(|id| quote!(#id)).unwrap_or_else(|| quote!(None));
 
@@ -632,7 +629,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                     )),
                     {
                         let url = url.as_ref().map(|url| Ok(quote!(#url))).unwrap_or_else(|| {
-                            let server_fn_ident = &server_fn_path.segments.last().ok_or_else(|| Error::new_spanned(&server_fn_path, "no function name found"))?.ident;
+                            let server_fn_ident = &server_fn_path.segments.last().ok_or_else(|| Error::new_spanned(server_fn_path, "no function name found"))?.ident;
                             let url = format!("/api/{server_fn_ident}");
                             Ok::<_, Error>(quote!(#url))
                         })?;
@@ -682,7 +679,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
             let config_def = quote!(let config = #config_ty { #(#field_axs: #configs,)* };);
 
-            let optional_reset_on_success_effect = match component_config.reset_on_success.unwrap_or_default() {
+            let optional_reset_on_success_effect = match reset_on_success.unwrap_or_default() {
                 true => quote!(
                     #leptos_krate::create_effect(move |_| {
                         if let Some(Ok(_)) = #action_ident.value().get() {
@@ -859,7 +856,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 fn field_el_ty(leptos_form_krate: &syn::Path, field: &FormField) -> syn::Type {
     let ty = &field.ty;
     field
-        .aysdfo
+        .el
         .clone()
         .map(|x| x.0)
         .unwrap_or_else(|| parse2(quote!(<#ty as #leptos_form_krate::DefaultHtmlElement>::El)).unwrap())

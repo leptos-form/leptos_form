@@ -4,10 +4,12 @@ use std::rc::Rc;
 #[component]
 pub fn FormSubmissionHandler<I: 'static, T: Clone + 'static>(
     action: Action<I, Result<T, ServerFnError>>,
-    #[prop(optional)] on_success: Option<Rc<dyn Fn(T, Action<I, Result<T, ServerFnError>>) -> View + 'static>>,
-    #[prop(optional)] on_error: Option<
-        Rc<dyn Fn(ServerFnError, Action<I, Result<T, ServerFnError>>) -> View + 'static>,
-    >,
+    #[allow(clippy::type_complexity)]
+    #[prop(optional)]
+    on_success: Option<Rc<dyn Fn(T, Action<I, Result<T, ServerFnError>>) -> View + 'static>>,
+    #[allow(clippy::type_complexity)]
+    #[prop(optional)]
+    on_error: Option<Rc<dyn Fn(ServerFnError, Action<I, Result<T, ServerFnError>>) -> View + 'static>>,
 ) -> impl IntoView {
     view! {{move || match action.pending().get() {
         true => view! { <div>"Loading..."</div> }.into_view(),
