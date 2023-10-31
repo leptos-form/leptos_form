@@ -1248,7 +1248,7 @@ mod test {
                         |error| match error {
                             Some(form_error) => {
                                 let error = format!("{form_error}");
-                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red">{error}</span> })
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red;">{error}</span> })
                             },
                             None => #leptos_krate::View::default(),
                         },
@@ -1271,7 +1271,7 @@ mod test {
                         |error| match error {
                             Some(form_error) => {
                                 let error = format!("{form_error}");
-                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red">{error}</span> })
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red;">{error}</span> })
                             },
                             None => #leptos_krate::View::default(),
                         },
@@ -1294,7 +1294,7 @@ mod test {
                         |error| match error {
                             Some(form_error) => {
                                 let error = format!("{form_error}");
-                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red">{error}</span> })
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red;">{error}</span> })
                             },
                             None => #leptos_krate::View::default(),
                         },
@@ -1317,7 +1317,7 @@ mod test {
                         |error| match error {
                             Some(form_error) => {
                                 let error = format!("{form_error}");
-                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red">{error}</span> })
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red;">{error}</span> })
                             },
                             None => #leptos_krate::View::default(),
                         },
@@ -1462,7 +1462,7 @@ mod test {
                         |error| match error {
                             Some(form_error) => {
                                 let error = format!("{form_error}");
-                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red">{error}</span> })
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red;">{error}</span> })
                             },
                             None => #leptos_krate::View::default(),
                         },
@@ -1485,7 +1485,7 @@ mod test {
                         |error| match error {
                             Some(form_error) => {
                                 let error = format!("{form_error}");
-                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red">{error}</span> })
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red;">{error}</span> })
                             },
                             None => #leptos_krate::View::default(),
                         },
@@ -1608,7 +1608,7 @@ mod test {
                         |error| match error {
                             Some(form_error) => {
                                 let error = format!("{form_error}");
-                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red">{error}</span> })
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red;">{error}</span> })
                             },
                             None => #leptos_krate::View::default(),
                         }
