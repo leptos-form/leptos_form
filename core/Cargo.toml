@@ -6,20 +6,22 @@ authors.workspace = true
 rust-version = "1.75.0"
 
 [dependencies]
-cfg-if.workspace = true
 derivative.workspace = true
 derive_more.workspace = true
 leptos.workspace = true
-num-traits.workspace = true
 paste.workspace = true
 thiserror.workspace = true
 typed-builder.workspace = true
 wasm-bindgen.workspace = true
 web-sys.workspace = true
 
+bigdecimal = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }
+num-bigint = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
 
 [features]
+bigdecimal = ["dep:bigdecimal"]
 chrono = ["dep:chrono"]
+num-bigint = ["dep:num-bigint"]
 uuid = ["dep:uuid"]

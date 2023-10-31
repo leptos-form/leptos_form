@@ -4,22 +4,30 @@ pub use impls::*;
 
 use crate::*;
 use ::leptos::*;
-use ::std::marker::PhantomData;
 use ::wasm_bindgen::JsValue;
 
-// Note: the ty prop must be present because the props type produced for this component
-// uses all the generics supplied on the item below, so without directly referencing the generics
-// in some prop value, then an invocation of <FormField  props=.. /> would have no way of inferring the T and El types
-#[allow(unused_variables)]
-#[component]
-pub fn FormField<T: FormComponent<El>, El>(
-    props: RenderProps<T::Signal, T::Config>,
-    #[prop(optional)] ty: PhantomData<(T, El)>,
-) -> impl IntoView {
-    T::render(props)
+pub use form_field_component::FormField;
+
+#[doc(hidden)]
+mod form_field_component {
+    use super::{FormComponent, RenderProps};
+    use ::leptos::*;
+    use ::std::marker::PhantomData;
+
+    // Note: the ty prop must be present because the props type produced for this component
+    // uses all the generics supplied on the item below, so without directly referencing the generics
+    // in some prop value, then an invocation of <FormField  props=.. /> would have no way of inferring the T and El types
+    #[allow(unused_variables)]
+    #[component]
+    pub fn FormField<T: FormComponent<El>, El>(
+        props: RenderProps<T::Signal, T::Config>,
+        #[prop(optional)] ty: PhantomData<(T, El)>,
+    ) -> impl IntoView {
+        T::render(props)
+    }
 }
 
-/// Provides utilities for a data type's form field representation.
+// docs are at workspace level
 pub trait FormField<El>: Sized {
     /// A configuration type which is used for mapping between Self and the underlying value of Self::Signal.
     type Config: Clone + Default + 'static;
@@ -40,14 +48,19 @@ pub trait FormField<El>: Sized {
     }
 }
 
+/// Rendering behavior for a particular data type given the html it is rendered in.
 pub trait FormComponent<El>: FormField<El> {
     fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView;
 }
 
+// docs are at workspace level
 pub trait DefaultHtmlElement {
+    /// The default html node this type will be rendered in.
+    /// `Self` should impl `FormField<<Self as DefaultHtmlElement>::El>`
     type El;
 }
 
+/// Props provided during render to a type implementing [`trait@FormField`].
 #[derive(Clone, Debug, TypedBuilder)]
 #[builder(field_defaults(setter(into)))]
 pub struct RenderProps<T: 'static, Config = ()> {
@@ -62,10 +75,12 @@ pub struct RenderProps<T: 'static, Config = ()> {
     pub config: Config,
 }
 
+/// Signal type which holds a [`FormFieldSignalValue`].
 #[derive(AsRef, AsMut, Debug, Deref, DerefMut, Derivative, From, Into)]
 #[derivative(Clone(bound = ""), Copy(bound = ""))]
 pub struct FormFieldSignal<T: 'static>(pub RwSignal<FormFieldSignalValue<T>>);
 
+/// A signal value holding a current state, an initial state, and possibly an error.
 #[derive(Clone, Debug, Default)]
 pub struct FormFieldSignalValue<T> {
     pub value: T,
@@ -126,48 +141,48 @@ impl<T: DefaultHtmlElement> DefaultHtmlElement for Option<T> {
     type El = T::El;
 }
 
-impl<U, El> FormField<El> for Option<U>
+impl<T, El> FormField<El> for Option<T>
 where
-    U: FormField<El>,
+    T: FormField<El>,
 {
-    type Config = U::Config;
-    type Signal = U::Signal;
+    type Config = T::Config;
+    type Signal = T::Signal;
 
     fn default_signal() -> Self::Signal {
-        U::default_signal()
+        T::default_signal()
     }
     fn is_default_value(signal: &Self::Signal) -> bool {
-        U::is_default_value(signal)
+        T::is_default_value(signal)
     }
     fn into_signal(self, config: &Self::Config) -> Self::Signal {
         match self {
-            Some(value) => U::into_signal(value, config),
-            None => U::default_signal(),
+            Some(value) => T::into_signal(value, config),
+            None => T::default_signal(),
         }
     }
     fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError> {
         match Self::is_default_value(&signal) {
             true => Ok(None),
-            false => Ok(Some(U::try_from_signal(signal, config)?)),
+            false => Ok(Some(T::try_from_signal(signal, config)?)),
         }
     }
     fn reset_initial_value(signal: &Self::Signal) {
-        U::reset_initial_value(signal);
+        T::reset_initial_value(signal);
     }
     fn validate(signal: Self::Signal) -> Result<(), FormError> {
-        U::validate(signal)
+        T::validate(signal)
     }
     fn with_error<O>(signal: &Self::Signal, f: impl FnOnce(Option<&FormError>) -> O) -> O {
-        U::with_error(signal, f)
+        T::with_error(signal, f)
     }
 }
 
-impl<El, U> FormComponent<El> for Option<U>
+impl<El, T> FormComponent<El> for Option<T>
 where
-    U: FormComponent<El>,
+    T: FormComponent<El>,
 {
     fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
-        U::render(props)
+        T::render(props)
     }
 }
 

@@ -42,10 +42,10 @@ repos:
         args:
         - clippy
         - --verbose
+        - --all-features
         - --fix
         - --allow-dirty
         - --allow-staged
-        - --all-features
         language: system
         types: [rust]
         always_run: true
@@ -60,6 +60,9 @@ repos:
         - clippy
         - --verbose
         - --all-features
+        - --
+        - -D
+        - warnings
         language: system
         types: [rust]
         always_run: true

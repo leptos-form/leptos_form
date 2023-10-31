@@ -3,8 +3,8 @@ use ::leptos::html::*;
 use ::leptos::*;
 use ::wasm_bindgen::JsValue;
 
-macro_rules! int_impl {
-    ($($ty:ty),*$(,)?) => { $(
+macro_rules! num_impl {
+    ($($ty:ty $({ $(type: $type:literal)?$(,)? $(min: $min:expr, max: $max:expr)?$(,)? })? ),*$(,)?) => { $(
         impl DefaultHtmlElement for $ty {
             type El = HtmlElement<Input>;
         }
@@ -38,15 +38,16 @@ macro_rules! int_impl {
                 let class = props.class_signal();
                 view! {
                     <input
-                        type="number"
+                        type=num_impl!(@type $($($type)?)?)
                         id={props.id.unwrap_or_else(|| props.name.clone())}
                         name={props.name}
-                        min={$ty::MIN}
-                        max={$ty::MAX}
+                        min=num_impl!(@min $ty $($(, $min)?)?)
+                        max=num_impl!(@max $ty $($(, $max)?)?)
                         class={class}
                         prop:class={move || class.with(|x| x.as_ref().map(|x| JsValue::from_str(&*x)))}
                         value=move || props.signal.get().value
                         prop:value={props.signal.0}
+                        on:keydown=num_impl!(@prevent_invalid_keystrokes value $($($type)?)?)
                         on:input=move |ev| props.signal.0.update(|x| x.value = event_target_value(&ev))
                         on:change=move |_| {
                             if let Err(form_error) = <Self as FormField<HtmlElement<Input>>>::try_from_signal(props.signal, &props.config) {
@@ -60,6 +61,59 @@ macro_rules! int_impl {
             }
         }
     )* };
+    (@type $type:literal) => {$type};
+    (@type) => {"number"};
+
+    (@min $ty:ty, $min:expr) => {$min};
+    (@min $ty:ty) => {<$ty>::MIN};
+
+    (@max $ty:ty, $max:expr) => {$max};
+    (@max $ty:ty) => {<$ty>::MAX};
+
+    (@prevent_invalid_keystrokes $value:ident $type:literal) => {|ev| {
+        let key = ev.key();
+        if key.len() > 1 {
+            return;
+        }
+        if let Some(c) = key.chars().next() {
+            if !matches!(c, '0'|'1'|'2'|'3'|'4'|'5'|'6'|'7'|'8'|'9'|'.'|'-'|'+') {
+                ev.prevent_default();
+            }
+        }
+    }};
+    (@prevent_invalid_keystrokes $value:ident) => {|_| {}};
 }
 
-int_impl!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
+num_impl!(
+    u8,
+    u16,
+    u32,
+    u64,
+    u128,
+    usize,
+    i8,
+    i16,
+    i32,
+    i64,
+    i128,
+    isize,
+    f32 { type: "text" },
+    f64 { type: "text" },
+);
+
+#[cfg(feature = "num-bigint")]
+num_impl!(
+    num_bigint::BigInt {
+        min: None::<&'static str>,
+        max: None::<&'static str>
+    },
+    num_bigint::BigUint {
+        min: "0",
+        max: None::<&'static str>
+    },
+);
+
+#[cfg(feature = "bigdecimal")]
+num_impl!(
+    bigdecimal::BigDecimal { type: "text", min: None::<&'static str>, max: None::<&'static str> },
+);

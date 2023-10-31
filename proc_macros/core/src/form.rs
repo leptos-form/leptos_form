@@ -141,11 +141,6 @@ struct Element(syn::Type);
 
 #[derive(Clone, Debug, Default, FromMeta, IsVariant)]
 enum FieldLabel {
-    #[darling(rename = "none")]
-    None,
-    #[darling(rename = "default")]
-    #[default]
-    Default,
     #[darling(rename = "adjacent")]
     Adjacent {
         container: Option<Container>,
@@ -153,6 +148,11 @@ enum FieldLabel {
         class: Option<syn::LitStr>,
         value: Option<syn::LitStr>,
     },
+    #[darling(rename = "default")]
+    #[default]
+    Default,
+    #[darling(rename = "none")]
+    None,
     #[darling(rename = "wrap")]
     Wrap {
         id: Option<syn::LitStr>,
@@ -290,8 +290,18 @@ impl FromMeta for Action {
 }
 
 impl FromMeta for Element {
-    fn from_string(value: &str) -> Result<Self, darling::Error> {
-        let ty: syn::Type = parse_str(value).map_err(darling::Error::custom)?;
+    fn from_meta(meta: &syn::Meta) -> Result<Self, darling::Error> {
+        let ty: syn::Type = match &meta {
+            syn::Meta::List(meta_list) => {
+                parse2(meta_list.tokens.clone()).map_err(|err| darling::Error::from(err).with_span(&meta.span()))?
+            }
+            syn::Meta::Path(_) | syn::Meta::NameValue(_) => {
+                return Err(darling::Error::custom(
+                    "missing el type, specify using parentheses like `el(leptos::html::HtmlElement<..>)`",
+                )
+                .with_span(&meta.span()))
+            }
+        };
         Ok(Self(ty))
     }
 }
@@ -379,6 +389,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
     let signal_ty = signal_ident.clone();
     let config_ty = config_ident.clone();
 
+    #[allow(clippy::type_complexity)]
     let (field_groups, field_axs, field_tys, field_el_tys, configs, signal_fields, config_fields): (
         Vec<_>,
         Vec<_>,
@@ -916,7 +927,7 @@ fn render_error(
 
     Ok(match (&*form_eh, &*field_eh) {
         (EH::None, EH::Default) => quote!(#leptos_krate::View::default()),
-        (EH::Default, EH::Default) => quote!(#leptos_krate::view! { <span style="color: red">{#error_ident}</span> }),
+        (EH::Default, EH::Default) => quote!(#leptos_krate::view! { <span style="color: red;">{#error_ident}</span> }),
         (EH::Component(component), EH::Default) => quote!(#leptos_krate::view! { <#component error=#error_ident /> }),
         (EH::Container(Container { tag, id, class }), EH::Default) => {
             let id = id.iter();
@@ -925,7 +936,7 @@ fn render_error(
         }
         (EH::Raw, EH::Default) => quote!({#error_ident}),
         (_, EH::None) => quote!(#leptos_krate::View::default()),
-        (_, EH::Default) => quote!(#leptos_krate::view! { <span style="color: red">{#error_ident}</span> }),
+        (_, EH::Default) => quote!(#leptos_krate::view! { <span style="color: red;">{#error_ident}</span> }),
         (_, EH::Component(component)) => quote!(#leptos_krate::view! { <#component error=#error_ident /> }),
         (_, EH::Container(Container { tag, id, class })) => {
             let id = id.iter();

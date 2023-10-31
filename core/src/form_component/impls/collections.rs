@@ -1,7 +1,6 @@
 use crate::components::*;
 use crate::*;
 use ::core::ops::*;
-use ::leptos::*;
 use ::std::rc::Rc;
 
 #[derive(Clone, Default, Derivative, TypedBuilder)]
@@ -12,7 +11,7 @@ pub struct VecConfig<Config: Default> {
     #[builder(default)]
     pub item_class: Option<&'static str>,
     #[builder(setter(strip_option))]
-    pub item_label: Option<ItemLabel>,
+    pub item_label: Option<VecItemLabel>,
     pub items: VecItems,
     pub add: Adornment,
     pub remove: Adornment,
@@ -20,14 +19,14 @@ pub struct VecConfig<Config: Default> {
 
 #[derive(Clone, Copy, Debug, Default, TypedBuilder)]
 #[builder(field_defaults(default))]
-pub struct ItemLabel {
+pub struct VecItemLabel {
     pub class: Option<&'static str>,
-    pub style: ItemLabelStyle,
-    pub punctuation: ItemLabelPunctuation,
+    pub style: VecItemLabelStyle,
+    pub punctuation: VecItemLabelPunctuation,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub enum ItemLabelStyle {
+pub enum VecItemLabelStyle {
     CapitalLetter,
     Letter,
     #[default]
@@ -35,7 +34,7 @@ pub enum ItemLabelStyle {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub enum ItemLabelPunctuation {
+pub enum VecItemLabelPunctuation {
     #[default]
     None,
     Parenthesis,
@@ -87,8 +86,8 @@ impl Default for AdornmentSpec {
     }
 }
 
-impl<U: DefaultHtmlElement> DefaultHtmlElement for Vec<U> {
-    type El = Vec<U::El>;
+impl<T: DefaultHtmlElement> DefaultHtmlElement for Vec<T> {
+    type El = Vec<T::El>;
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -98,13 +97,13 @@ pub struct VecSignalItem<Signal> {
     signal: Signal,
 }
 
-impl<U, El> FormField<Vec<El>> for Vec<U>
+impl<T, El> FormField<Vec<El>> for Vec<T>
 where
-    U: FormField<El>,
-    <U as FormField<El>>::Signal: Clone,
+    T: FormField<El>,
+    <T as FormField<El>>::Signal: Clone,
 {
-    type Config = VecConfig<<U as FormField<El>>::Config>;
-    type Signal = RwSignal<Vec<VecSignalItem<<U as FormField<El>>::Signal>>>;
+    type Config = VecConfig<<T as FormField<El>>::Config>;
+    type Signal = RwSignal<Vec<VecSignalItem<<T as FormField<El>>::Signal>>>;
 
     fn default_signal() -> Self::Signal {
         create_rw_signal(vec![])
@@ -128,13 +127,13 @@ where
         signal.with(|value| {
             value
                 .iter()
-                .map(|item| U::try_from_signal(item.signal.clone(), &config.item))
+                .map(|item| T::try_from_signal(item.signal.clone(), &config.item))
                 .collect()
         })
     }
     fn reset_initial_value(signal: &Self::Signal) {
         signal.update(|sig| {
-            sig.iter().for_each(|sig| U::reset_initial_value(&sig.signal));
+            sig.iter().for_each(|sig| T::reset_initial_value(&sig.signal));
         });
     }
     fn with_error<O>(_: &Self::Signal, f: impl FnOnce(Option<&FormError>) -> O) -> O {
@@ -142,9 +141,9 @@ where
     }
 }
 
-impl<U, El, S> FormComponent<Vec<El>> for Vec<U>
+impl<T, El, S> FormComponent<Vec<El>> for Vec<T>
 where
-    U: FormComponent<El, Signal = FormFieldSignal<S>>,
+    T: FormComponent<El, Signal = FormFieldSignal<S>>,
     S: Clone + Eq + 'static,
 {
     fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
@@ -167,7 +166,7 @@ where
                             items.push(VecSignalItem {
                                 id,
                                 index: items.len(),
-                                signal: U::default_signal(),
+                                signal: T::default_signal(),
                             });
                             next_id.update(|x| *x += 1);
                         }
@@ -181,7 +180,7 @@ where
             });
         }
 
-        let key = move |item: &VecSignalItem<<U as FormField<El>>::Signal>| item.id;
+        let key = move |item: &VecSignalItem<<T as FormField<El>>::Signal>| item.id;
         let VecConfig {
             item: item_config,
             item_class,
@@ -207,7 +206,7 @@ where
                         .config(item_config.clone())
                         .build();
 
-                    VecConfig::<<U as FormField<El>>::Config>::wrap(
+                    VecConfig::<<T as FormField<El>>::Config>::wrap(
                         &items,
                         item_class,
                         item_label.as_ref(),
@@ -215,7 +214,7 @@ where
                         props.signal,
                         item.index,
                         id,
-                        <U as FormComponent<El>>::render(item_props),
+                        <T as FormComponent<El>>::render(item_props),
                     ).into_view()
                 }
             />
@@ -224,7 +223,7 @@ where
                 if num_items < max_items.unwrap_or(usize::MAX) {
                     let on_add = move |_| props.signal.update(|items| {
                         let id = next_id.get_untracked();
-                        items.push(VecSignalItem { id, index: items.len(), signal: U::default_signal() });
+                        items.push(VecSignalItem { id, index: items.len(), signal: T::default_signal() });
                         next_id.update(|x| *x = id + 1);
                     });
 
@@ -284,10 +283,11 @@ static ASCII_UPPER: [char; 26] = [
 ];
 
 impl<Config: Default> VecConfig<Config> {
+    #[allow(clippy::too_many_arguments)]
     fn wrap<Signal>(
         items: &VecItems,
         item_class: Option<&'static str>,
-        item_label: Option<&ItemLabel>,
+        item_label: Option<&VecItemLabel>,
         remove: &Adornment,
         signal: RwSignal<Vec<VecSignalItem<Signal>>>,
         i: usize,
@@ -357,7 +357,7 @@ impl<Config: Default> VecConfig<Config> {
     }
 }
 
-impl ItemLabel {
+impl VecItemLabel {
     fn wrap_label(&self, i: usize, id: Oco<'static, str>, item: impl IntoView) -> View {
         view! {
             <label for={id} class={self.class}>
@@ -379,7 +379,7 @@ impl VecItems {
     }
 }
 
-impl ItemLabelStyle {
+impl VecItemLabelStyle {
     fn render(&self, i: usize) -> String {
         let ascii_set = match self {
             Self::CapitalLetter => &ASCII_UPPER,
@@ -397,7 +397,7 @@ impl ItemLabelStyle {
     }
 }
 
-impl ItemLabelPunctuation {
+impl VecItemLabelPunctuation {
     fn render(&self) -> &'static str {
         match self {
             Self::None => "",

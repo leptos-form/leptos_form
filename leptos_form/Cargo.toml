@@ -10,6 +10,13 @@ leptos_form_core.path = "../core"
 leptos_form_proc_macros.path = "../proc_macros"
 leptos_router.workspace = true
 
+bigdecimal = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
+num-bigint = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
+
 [features]
-chrono = ["leptos_form_core/chrono"]
-uuid = ["leptos_form_core/uuid"]
+bigdecimal = ["dep:bigdecimal", "leptos_form_core/bigdecimal"]
+chrono = ["dep:chrono", "leptos_form_core/chrono"]
+num-bigint = ["dep:num-bigint", "leptos_form_core/num-bigint"]
+uuid = ["dep:uuid", "leptos_form_core/uuid"]
