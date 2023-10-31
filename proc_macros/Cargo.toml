@@ -6,8 +6,6 @@ edition.workspace = true
 
 [dependencies]
 leptos_form_proc_macros_core.path = "./core"
-proc-macro2.workspace = true
-syn.workspace = true
 
 [lib]
 proc-macro = true

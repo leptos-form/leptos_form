@@ -66,14 +66,24 @@ pub fn format_form_name(
 
 #[derive(Clone, Copy, Debug)]
 pub enum LabelCase {
+    /// `"camelCase"`
     Camel,
+    /// `"kebab-case"`
     Kebab,
+    /// `"lower case"`
     Lower,
+    /// `"PascalCase"`
     Pascal,
+    /// `"snake_case"`
     Snake,
+    /// `"Title Case"`
     Title,
+    /// `"Train-Case"`
     Train,
+    /// `"UPPER CASE"`
     Upper,
+    /// `"UPPER-KEBAB-CASE"`
     UpperKebab,
+    /// `"UPPER_SNAKE_CASE"`
     UpperSnake,
 }

@@ -3,43 +3,46 @@
 use leptos::*;
 use std::rc::Rc;
 
-pub trait OnSuccess<I: 'static, T: Clone + 'static>:
-    Fn(T, Action<I, Result<T, ServerFnError>>) -> View + 'static
-{
-}
-pub trait OnError<I: 'static, T: Clone + 'static>:
-    Fn(ServerFnError, Action<I, Result<T, ServerFnError>>) -> View + 'static
+pub trait OnError<I: 'static, T: Clone + 'static, IV: IntoView + 'static>:
+    Fn(ServerFnError, Action<I, Result<T, ServerFnError>>) -> IV + 'static
 {
 }
 
-impl<I: 'static, T: Clone + 'static, F> OnSuccess<I, T> for F where
-    F: Fn(T, Action<I, Result<T, ServerFnError>>) -> View + 'static
+pub trait OnSuccess<I: 'static, T: Clone + 'static, IV: IntoView + 'static>:
+    Fn(T, Action<I, Result<T, ServerFnError>>) -> IV + 'static
 {
 }
-impl<I: 'static, T: Clone + 'static, F> OnError<I, T> for F where
-    F: Fn(ServerFnError, Action<I, Result<T, ServerFnError>>) -> View + 'static
+
+impl<I: 'static, T: Clone + 'static, IV: IntoView + 'static, F> OnError<I, T, IV> for F where
+    F: Fn(ServerFnError, Action<I, Result<T, ServerFnError>>) -> IV + 'static
+{
+}
+impl<I: 'static, T: Clone + 'static, IV: IntoView + 'static, F> OnSuccess<I, T, IV> for F where
+    F: Fn(T, Action<I, Result<T, ServerFnError>>) -> IV + 'static
 {
 }
 
 #[component]
-pub fn FormSubmissionHandler<I: 'static, T: Clone + 'static>(
+pub fn FormSubmissionHandler<IV1: IntoView + 'static, IV2: IntoView + 'static, I: 'static, T: Clone + 'static>(
     action: Action<I, Result<T, ServerFnError>>,
-    #[allow(clippy::type_complexity)]
+    #[prop(optional)] on_error: Option<Rc<dyn OnError<I, T, IV2>>>,
+    #[prop(optional)] on_success: Option<Rc<dyn OnSuccess<I, T, IV1>>>,
+    #[allow(unused_variables)]
     #[prop(optional)]
-    on_success: Option<Rc<dyn OnSuccess<I, T>>>,
-    #[allow(clippy::type_complexity)]
+    error_view_ty: Option<std::marker::PhantomData<IV2>>,
+    #[allow(unused_variables)]
     #[prop(optional)]
-    on_error: Option<Rc<dyn OnError<I, T>>>,
+    success_view_ty: Option<std::marker::PhantomData<IV1>>,
 ) -> impl IntoView {
     view! {{move || match action.pending().get() {
         true => view! { <div>"Loading..."</div> }.into_view(),
         false => match action.value().get() {
             Some(Ok(ok)) => match on_success.clone() {
-                Some(on_success) => on_success(ok, action),
+                Some(on_success) => on_success(ok, action).into_view(),
                 None => View::default(),
             },
             Some(Err(err)) => match on_error.clone() {
-                Some(on_error) => on_error(err, action),
+                Some(on_error) => on_error(err, action).into_view(),
                 None => view! {
                     <div>
                     {move || match err.clone() {

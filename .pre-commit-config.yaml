@@ -34,6 +34,36 @@ repos:
 
   - repo: local
     hooks:
+      # NOTE: if a false positive occurs and dependency is used that cargo-machete complains about,
+      # you can ignore it by adding this field in the package's Cargo.toml:
+      # [package.metadata.cargo-machete]
+      # ignored = []
+      - id: cargo-machete
+        name: cargo-machete
+        description: list unused cargo dependencies
+        stages: [commit, push]
+        entry: cargo
+        args:
+        - machete
+        language: system
+        types: [rust]
+        always_run: true
+        pass_filenames: false
+
+      - id: cargo-deny
+        name: cargo-deny
+        description: Cargo plugin for linting your dependencies
+        stages: [push]
+        entry: cargo
+        args:
+        - deny
+        - check
+        - --all-features
+        language: system
+        types: [rust]
+        always_run: true
+        pass_filenames: false
+
       - id: cargo-clippy
         name: cargo-clippy
         description: lint the minimal changed packages in the cargo workspace

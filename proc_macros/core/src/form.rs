@@ -613,8 +613,6 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             let id = form_id.iter();
             let class = form_class.iter();
             let submit = submit.iter();
-            let on_error = on_error.iter();
-            let on_success = on_success.iter();
             let field_changed_class = field_changed_class.iter();
 
             let data_ident = format_ident!("data");
@@ -625,11 +623,10 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
             let props_id = form_id.as_ref().map(|id| quote!(#id)).unwrap_or_else(|| quote!(None));
 
-            let action = action.as_ref().ok_or_else(||
-                    Error::new(
-                        Span::call_site(),
-                        "component forms must specify an action attribute",
-                    ))?;
+            let action = action.as_ref().ok_or_else(||Error::new(
+                Span::call_site(),
+                "component forms must specify an action attribute",
+            ))?;
 
             let map_submit = if action.is_path() {
                 match map_submit {
@@ -729,11 +726,18 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             };
 
             let form_submission_handler = if action.is_path() {
+                let error_view_ty = if on_error.is_some() { quote!() } else { quote!(error_view_ty={<std::marker::PhantomData<#leptos_krate::View> as Default>::default()}) };
+                let success_view_ty = if on_success.is_some() { quote!() } else { quote!(success_view_ty={<std::marker::PhantomData<#leptos_krate::View> as Default>::default()}) };
+
+                let on_error = on_error.iter();
+                let on_success = on_success.iter();
                 quote!(
                     <FormSubmissionHandler
                         action=#action_ident
-                        #(on_success=Rc::new(#on_success))*
                         #(on_error=Rc::new(#on_error))*
+                        #(on_success=Rc::new(#on_success))*
+                        #error_view_ty
+                        #success_view_ty
                     />
                 )
             } else {

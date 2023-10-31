@@ -133,13 +133,13 @@ Rendered adjacent labels have the following html structure:
 </attr.container.tag>
 ```
 
-| Attribute  | description                                        | Type                                           | Optional                            |
-| -----------|----------------------------------------------------|------------------------------------------------|-------------------------------------|
-| container  | A containing element which will wrap the \<label\> | [container](#container-attributes)             | N if struct-level, Y if field-level |
-| id         | `id` property set on the wrapping html element     | string                                         | Y                                   |
-| class      | `class` property set on the wrapping html element  | string                                         | Y                                   |
-| rename_all | Rename all labels to a particular case             | [`LabelCase`] (omit the `LabelCase::` portion) | Y (only allowed at struct-level)    |
-| value      | A literal string to override the label value       | string                                         | Y (only allowed at field-level)     |
+| Attribute  | description                                        | Type                               | Optional                            |
+| -----------|----------------------------------------------------|------------------------------------|-------------------------------------|
+| container  | A containing element which will wrap the \<label\> | [container](#container-attributes) | N if struct-level, Y if field-level |
+| id         | `id` property set on the wrapping html element     | string                             | Y                                   |
+| class      | `class` property set on the wrapping html element  | string                             | Y                                   |
+| rename_all | Rename all labels to a particular case             | string, see [`LabelCase`]          | Y (only allowed at struct-level)    |
+| value      | A literal string to override the label value       | string                             | Y (only allowed at field-level)     |
 
 ## Wrapped label attributes
 Configuration for a wrapped label.
@@ -151,9 +151,9 @@ Rendered wrapped labels have the following html structure:
 </label>
 ```
 
-| Attribute  | description                                        | Type                                           | Optional                            |
-| -----------|----------------------------------------------------|------------------------------------------------|-------------------------------------|
-| id         | `id` property set on the wrapping html element     | string                                         | Y                                   |
-| class      | `class` property set on the wrapping html element  | string                                         | Y                                   |
-| rename_all | Rename all labels to a particular case             | [`LabelCase`] (omit the `LabelCase::` portion) | Y (only allowed at struct-level)    |
-| value      | A literal string to override the label value       | string                                         | Y (only allowed at field-level)     |
+| Attribute  | description                                        | Type                      | Optional                            |
+| -----------|----------------------------------------------------|---------------------------|-------------------------------------|
+| id         | `id` property set on the wrapping html element     | string                    | Y                                   |
+| class      | `class` property set on the wrapping html element  | string                    | Y                                   |
+| rename_all | Rename all labels to a particular case             | string, see [`LabelCase`] | Y (only allowed at struct-level)    |
+| value      | A literal string to override the label value       | string                    | Y (only allowed at field-level)     |
