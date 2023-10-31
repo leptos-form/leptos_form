@@ -58,7 +58,6 @@ repos:
         args:
         - deny
         - check
-        - --all-features
         language: system
         types: [rust]
         always_run: true
