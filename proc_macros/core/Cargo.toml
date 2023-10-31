@@ -3,6 +3,7 @@ name = "leptos_form_proc_macros_core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+repository.workspace = true
 
 [dependencies]
 convert_case.workspace = true

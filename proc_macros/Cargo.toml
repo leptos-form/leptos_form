@@ -3,9 +3,10 @@ name = "leptos_form_proc_macros"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
+repository.workspace = true
 
 [dependencies]
-leptos_form_proc_macros_core.path = "./core"
+leptos_form_proc_macros_core.workspace = true
 
 [lib]
 proc-macro = true

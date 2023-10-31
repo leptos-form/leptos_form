@@ -3,11 +3,12 @@ name = "leptos_form"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+repository.workspace = true
 
 [dependencies]
 leptos.workspace = true
-leptos_form_core.path = "../core"
-leptos_form_proc_macros.path = "../proc_macros"
+leptos_form_core.workspace = true
+leptos_form_proc_macros.workspace = true
 leptos_router.workspace = true
 wasm-bindgen.workspace = true
 

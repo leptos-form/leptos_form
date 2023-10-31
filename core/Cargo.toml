@@ -3,7 +3,7 @@ name = "leptos_form_core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-rust-version = "1.75.0"
+repository.workspace = true
 
 [dependencies]
 derivative.workspace = true
