@@ -2,17 +2,19 @@ Derives forms from structs.
 
 # Example
 ```rust
-#[derive(leptos_form::Form)]
-#[form(component)]
-pub struct MyForm {
-    pub id: String,
-}
+mod foo {
+    #[derive(Clone, leptos_form::Form)]
+    #[form(component(action = "/api/my-form"))]
+    pub struct MyForm {
+        pub id: String,
+    }
 
-#[leptos::component]
-pub fn AnotherComponent() -> impl leptos::IntoView {
-    let initial = MyForm { id: "1".to_string() };
-    view! {
-        <MyForm initial={initial} />
+    #[leptos::component]
+    pub fn AnotherComponent() -> impl leptos::IntoView {
+        let initial = MyForm { id: "1".to_string() };
+        leptos::view! {
+            <MyForm initial={initial} />
+        }
     }
 }
 ```
@@ -66,12 +68,16 @@ An action can be specified one of two ways:
 - a string literal, representing the url the form should be submitted to; in this case, quality of life attributes like `component.map_submit`, `component.on_error`, `component.on_success`, and `component.reset_on_success` cannot be used because the page will immediately reload upon form submission
 - a path to a server function specified in a particular way:
     ```rust
-    #[derive(Form)]
-    #[form(component(action = my_server_fn(my_data)))]
-    struct MyForm { .. }
+    mod my_mod {
+        #[derive(Clone, Debug, leptos_form::Form, serde::Deserialize, serde::Serialize)]
+        #[form(component(action = my_server_fn(my_data)))]
+        struct MyForm {}
 
-    #[server]
-    async fn my_server_fn(my_data: MyData) -> Result<.., ServerFnError> { .. }
+        #[leptos::server]
+        async fn my_server_fn(my_data: MyForm) -> Result<(), leptos::ServerFnError> {
+            Ok(())
+        }
+    }
     ```
 
   leptos_form *does not* use [`ActionForm`](leptos_router::ActionForm), and therefore must produce the props to the server function itself which requires knowing the argument names of the server function.

@@ -9,6 +9,8 @@ leptos.workspace = true
 leptos_form_core.path = "../core"
 leptos_form_proc_macros.path = "../proc_macros"
 leptos_router.workspace = true
+serde.workspace = true
+wasm-bindgen.workspace = true
 
 bigdecimal = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }

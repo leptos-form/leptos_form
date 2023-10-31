@@ -110,7 +110,7 @@ struct Container {
     class: Option<syn::LitStr>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, IsVariant)]
 enum Action {
     Path {
         server_fn_path: syn::Path,
@@ -358,6 +358,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
     let signal_ident = format_ident!("__{ident}Signal");
     let config_ident = format_ident!("__{ident}Config");
+    let mod_ident = format_ident!("{}", format!("leptos_form_component_{ident}").to_case(Case::Snake));
 
     let form_label = form_label.unwrap_or_default();
     let is_internal = internal.unwrap_or_default();
@@ -370,18 +371,13 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         None
     };
 
-    let leptos_krate: syn::Path = parse2(match is_internal {
-        true => quote!(::leptos),
-        false => quote!(::leptos_form::internal::leptos),
-    })?;
-    let leptos_router_krate: syn::Path = parse2(match is_internal {
-        true => quote!(::leptos_router),
-        false => quote!(::leptos_form::internal::leptos_router),
-    })?;
     let leptos_form_krate: syn::Path = parse2(match is_internal {
         true => quote!(crate),
         false => quote!(::leptos_form),
     })?;
+    let leptos_krate: syn::Path = parse2(quote!(#leptos_form_krate::internal::leptos))?;
+    let leptos_router_krate: syn::Path = parse2(quote!(#leptos_form_krate::internal::leptos_router))?;
+    let wasm_bindgen_krate: syn::Path = parse2(quote!(#leptos_form_krate::internal::wasm_bindgen))?;
 
     let fields = data.take_struct().unwrap();
 
@@ -629,21 +625,31 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
             let props_id = form_id.as_ref().map(|id| quote!(#id)).unwrap_or_else(|| quote!(None));
 
-            let map_submit = match map_submit {
-                Some(MapSubmit::Defn(closure_defn)) => {
-                    quote!(
-                        let map_submit = #closure_defn;
+            let action = action.as_ref().ok_or_else(||
+                    Error::new(
+                        Span::call_site(),
+                        "component forms must specify an action attribute",
+                    ))?;
+
+            let map_submit = if action.is_path() {
+                match map_submit {
+                    Some(MapSubmit::Defn(closure_defn)) => {
+                        quote!(
+                            let map_submit = #closure_defn;
+                            let #data_ident = map_submit(#leptos_form_krate::FormDiff { initial: #initial_ident.clone(), current: #data_ident });
+                        )
+                    },
+                    Some(MapSubmit::Path(path)) => quote!(
                         let #data_ident = map_submit(#leptos_form_krate::FormDiff { initial: #initial_ident.clone(), current: #data_ident });
-                    )
-                },
-                Some(MapSubmit::Path(path)) => quote!(
-                    let #data_ident = map_submit(#leptos_form_krate::FormDiff { initial: #initial_ident.clone(), current: #data_ident });
-                ),
-                None => quote!(),
+                    ),
+                    None => quote!(),
+                }
+            } else {
+                quote!()
             };
 
             let (tag_import, action_def, open_tag, close_tag, props_name) = match action {
-                Some(Action::Path { server_fn_path, arg, url }) => (
+                Action::Path { server_fn_path, arg, url } => (
                     quote!(use #leptos_router_krate::Form;),
                     Some(quote!(
                         fn server_fn_inference<T: Clone, U>(f: impl Fn(T) -> U) -> impl Fn(&T) -> U {
@@ -659,7 +665,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                         })?;
 
                         quote!(<Form action=#url #(id=#id)* #(class=#class)* on:submit=move |ev| {
-                            use wasm_bindgen::UnwrapThrowExt;
+                            use #wasm_bindgen_krate::UnwrapThrowExt;
                             ev.prevent_default();
                             let #data_ident = match #props_signal_ident.with(|props| <#component_ty as #leptos_form_krate::FormField<#leptos_krate::View>>::try_from_signal(props.signal, &config)) {
                                 Ok(parsed) => parsed,
@@ -674,23 +680,15 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                     quote!(</Form>),
                     { let arg = format!("{arg}"); quote!(#arg) },
                 ),
-                Some(Action::Url(url)) => (
+                Action::Url(url) => (
                     quote!(use #leptos_router_krate::Form;),
                     None,
                     quote!(<Form action=#url #(id=#id)* #(class=#class)*>),
                     quote!(</Form>),
                     quote!(""),
                 ),
-                None => {
-                    return Err(Error::new(
-                        Span::call_site(),
-                        "component forms must specify an action attribute",
-                    ))
-                }
             };
             let action_def = action_def.into_iter();
-
-            let mod_ident = format_ident!("{}", format!("leptos_form_component_{ident}").to_case(Case::Snake));
 
             let props_builder = quote!(
                 #leptos_form_krate::RenderProps::builder()
@@ -704,48 +702,70 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
             let config_def = quote!(let config = #config_ty { #(#field_axs: #configs,)* };);
 
-            let optional_reset_on_success_effect = match reset_on_success.unwrap_or_default() {
-                true => quote!(
-                    #leptos_krate::create_effect({
-                        let initial = initial.clone();
-                        move |_| {
-                            if let Some(Ok(_)) = #action_ident.value().get() {
-                                #config_def
-                                let new_props = #props_builder;
-                                #props_signal_ident.update(move |props| *props = new_props);
+            let optional_reset_on_success_effect = if action.is_path() {
+                    match reset_on_success.unwrap_or_default() {
+                    true => quote!(
+                        #leptos_krate::create_effect({
+                            let initial = initial.clone();
+                            move |_| {
+                                if let Some(Ok(_)) = #action_ident.value().get() {
+                                    #config_def
+                                    let new_props = #props_builder;
+                                    #props_signal_ident.update(move |props| *props = new_props);
+                                }
                             }
-                        }
-                    });
-                ),
-                false => quote!(
-                    #leptos_krate::create_effect(move |_| {
-                        if let Some(Ok(_)) = #action_ident.value().get() {
-                            #props_signal_ident.with(|props| #ident::reset_initial_value(&props.signal));
-                        }
-                    });
-                ),
+                        });
+                    ),
+                    false => quote!(
+                        #leptos_krate::create_effect(move |_| {
+                            if let Some(Ok(_)) = #action_ident.value().get() {
+                                #props_signal_ident.with(|props| #ident::reset_initial_value(&props.signal));
+                            }
+                        });
+                    ),
+                }
+            } else {
+                quote!()
+            };
+
+            let form_submission_handler = if action.is_path() {
+                quote!(
+                    <FormSubmissionHandler
+                        action=#action_ident
+                        #(on_success=Rc::new(#on_success))*
+                        #(on_error=Rc::new(#on_error))*
+                    />
+                )
+            } else {
+                quote!()
             };
 
             let pound = "#".parse::<TokenStream>().unwrap();
             let tokens = quote!(
+                // `leptos::component` fails to compile if the return type of the component function
+                // is not `impl IntoView` verbatim which is unnecessarily restrictive but not a blocker here;
+                // Means we have to create a submodule which imports IntoView into scope. Note that
+                // doc tests will fail if the submodule tries to import any values from super hence
+                // the strange imports and double functions.
                 #vis use #mod_ident::*;
-
-                #[allow(unused_imports)]
                 mod #mod_ident {
                     use super::*;
-                    use #leptos_form_krate::{FormField, components::FormSubmissionHandler};
-                    use #leptos_krate::{IntoAttribute, IntoView};
-                    #tag_import
-                    use ::std::rc::Rc;
+                    use #leptos_krate::IntoView;
 
+                    #[allow(unused_imports)]
                     #pound[#leptos_krate::#component_ident]
                     #vis fn #component_name(#initial_ident: #ident) -> impl IntoView {
+                        use #leptos_form_krate::{FormField, components::FormSubmissionHandler};
+                        use #leptos_krate::{IntoAttribute, IntoView, SignalGet, SignalUpdate, SignalWith};
+                        use ::std::rc::Rc;
+                        #tag_import
+
                         #(#action_def)*
                         #config_def
 
                         let #props_signal_ident = #leptos_krate::create_rw_signal(#props_builder);
 
-                        let #parse_error_handler_ident = |err: #leptos_form_krate::FormError| logging::debug_warn!("{err}");
+                        let #parse_error_handler_ident = |err: #leptos_form_krate::FormError| #leptos_krate::logging::debug_warn!("{err}");
 
                         #optional_reset_on_success_effect
 
@@ -753,13 +773,9 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
                         #leptos_krate::view! {
                             #open_tag
-                                {move || view! { <FormField props=#props_signal_ident.get() ty=ty /> }}
+                                {move || #leptos_krate::view! { <FormField props=#props_signal_ident.get() ty=ty /> }}
                                 #({#leptos_krate::#submit})*
-                                <FormSubmissionHandler
-                                    action=#action_ident
-                                    #(on_success=Rc::new(#on_success))*
-                                    #(on_error=Rc::new(#on_error))*
-                                />
+                                #form_submission_handler
                             #close_tag
                         }
                     }
@@ -852,9 +868,9 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 }
             }
             fn is_default_value(signal: &Self::Signal) -> bool {
-                #(
+                true #(&&
                     <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::is_default_value(&signal.#field_axs)
-                )&&*
+                )*
             }
             fn into_signal(self, #config_var_ident: &Self::Config) -> Self::Signal {
                 #signal_ty {
@@ -1150,8 +1166,9 @@ mod test {
             }
         );
 
-        let leptos_krate = quote!(::leptos_form::internal::leptos);
         let leptos_form_krate = quote!(::leptos_form);
+        let leptos_krate = quote!(#leptos_form_krate::internal::leptos);
+        let wasm_bindgen_krate = quote!(#leptos_form_krate::internal::wasm_bindgen);
 
         let expected = quote!(
             #[derive(Clone, Copy, Debug)]
@@ -1198,7 +1215,7 @@ mod test {
                     }
                 }
                 fn is_default_value(signal: &Self::Signal) -> bool {
-                    <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.id) &&
+                    true && <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.id) &&
                     <String as #leptos_form_krate::FormField<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.slug) &&
                     <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.created_at) &&
                     <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.count)
@@ -1419,7 +1436,7 @@ mod test {
                     }
                 }
                 fn is_default_value(signal: &Self::Signal) -> bool {
-                    <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.abc_123) &&
+                    true && <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.abc_123) &&
                     <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.zz)
                 }
                 fn into_signal(self, config: &Self::Config) -> Self::Signal {
@@ -1570,7 +1587,7 @@ mod test {
                     }
                 }
                 fn is_default_value(signal: &Self::Signal) -> bool {
-                    <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.ayo)
+                    true && <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.ayo)
                 }
                 fn into_signal(self, config: &Self::Config) -> Self::Signal {
                     __MyFormDataSignal {
@@ -1628,16 +1645,18 @@ mod test {
 
             pub use leptos_form_component_my_form_data::*;
 
-            #[allow(unused_imports)]
             mod leptos_form_component_my_form_data {
                 use super::*;
-                use #leptos_form_krate::{FormField, components::FormSubmissionHandler};
-                use #leptos_krate::{IntoAttribute, IntoView};
-                use #leptos_router_krate::Form;
-                use ::std::rc::Rc;
+                use #leptos_krate::IntoView;
 
+                #[allow(unused_imports)]
                 #[#leptos_krate::component]
                 pub fn MyFormData(initial: MyFormData) -> impl IntoView {
+                    use #leptos_form_krate::{FormField, components::FormSubmissionHandler};
+                    use #leptos_krate::{IntoAttribute, IntoView, SignalGet, SignalUpdate, SignalWith};
+                    use ::std::rc::Rc;
+                    use #leptos_router_krate::Form;
+
                     let config = __MyFormDataConfig {
                         ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
                     };
@@ -1649,29 +1668,29 @@ mod test {
                         .config(config.clone())
                         .build()
                     );
-                    let parse_error_handler = |err: #leptos_form_krate::FormError| logging::debug_warn!("{err}");
-                    #leptos_krate::create_effect({
-                        let initial = initial.clone();
-                        move |_| {
-                            if let Some(Ok(_)) = action.value().get() {
-                                let config = __MyFormDataConfig {
-                                    ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
-                                };
-                                let new_props = #leptos_form_krate::RenderProps::builder()
-                                    .id(None)
-                                    .name("")
-                                    .signal(initial.clone().into_signal(&config))
-                                    .config(config.clone())
-                                    .build();
-                                signal.update(move |props| *props = new_props);
-                            }
-                        }
-                    });
+                    let parse_error_handler = |err: #leptos_form_krate::FormError| #leptos_krate::logging::debug_warn!("{err}");
+                    // #leptos_krate::create_effect({
+                    //     let initial = initial.clone();
+                    //     move |_| {
+                    //         if let Some(Ok(_)) = action.value().get() {
+                    //             let config = __MyFormDataConfig {
+                    //                 ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
+                    //             };
+                    //             let new_props = #leptos_form_krate::RenderProps::builder()
+                    //                 .id(None)
+                    //                 .name("")
+                    //                 .signal(initial.clone().into_signal(&config))
+                    //                 .config(config.clone())
+                    //                 .build();
+                    //             signal.update(move |props| *props = new_props);
+                    //         }
+                    //     }
+                    // });
                     let ty = <std::marker::PhantomData<(MyFormData, #leptos_krate::View)> as Default>::default();
                     #leptos_krate::view! {
                         <Form action="/api/my-form-data">
-                            {move || view! { <FormField props=signal.get() ty=ty /> }}
-                            <FormSubmissionHandler action=action />
+                            {move || #leptos_krate::view! { <FormField props=signal.get() ty=ty /> }}
+                            // <FormSubmissionHandler action=action />
                         </Form>
                     }
                 }

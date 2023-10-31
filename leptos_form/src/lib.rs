@@ -80,4 +80,5 @@ pub mod prelude {
 pub mod internal {
     pub use leptos;
     pub use leptos_router;
+    pub use wasm_bindgen;
 }
