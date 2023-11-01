@@ -108,15 +108,6 @@ repos:
         types: [rust]
         args: ["--"]
 
-      - id: cargo-test
-        name: cargo-test
-        description: run all tests
-        stages: [push]
-        entry: cargo test
-        language: system
-        types: [rust]
-        pass_filenames: false
-
       - id: cargo-doc
         name: cargo-doc
         description: ensure cargo doc builds
@@ -125,6 +116,23 @@ repos:
         args:
         - -c
         - "RUSTDOCFLAGS=\"-D warnings\" cargo doc --all-features"
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-test
+        name: cargo-test
+        description: run all tests
+        stages: [push]
+        entry: sh
+        args:
+        - -c
+        - |
+          CARGO_INCREMENTAL="0" \
+          RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests" \
+          RUSTDOCFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests" \
+          cargo test \
+          --all-features
         language: system
         types: [rust]
         pass_filenames: false
