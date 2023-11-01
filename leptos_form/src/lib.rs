@@ -3,7 +3,7 @@
 
 pub use ::leptos_form_core::*;
 
-#[doc = include_str!("../../proc_macros/docs/Form.md")]
+#[doc = include_str!("../docs/Form.md")]
 pub use ::leptos_form_proc_macros::Form;
 
 /// Case conversion. Used in the [`macro@Form#label-attributes`] macro.
