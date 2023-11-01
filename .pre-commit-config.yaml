@@ -119,7 +119,10 @@ repos:
         name: cargo-doc
         description: ensure cargo doc builds
         stages: [push]
-        entry: RUSTDOCFLAGS="-D warnings" cargo doc --all-features
+        entry: sh
+        args:
+        - -c
+        - "RUSTDOCFLAGS=\"-D warnings\" cargo doc --all-features"
         language: system
         types: [rust]
         pass_filenames: false
