@@ -10,15 +10,19 @@ jobs:
     name: Release-plz
     runs-on: ubuntu-latest
     steps:
+    # TODO: change to dtolnay/rust-toolchain@stable once 1.75.0 lands on stable
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@nightly
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
         token: ${{ secrets.RELEASE_PLZ_TOKEN }}
-
-    # TODO: change to dtolnay/rust-toolchain@stable once 1.75.0 lands on stable
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@nightly
 
     - name: Run release-plz
       uses: MarcoIeni/release-plz-action@v0.5
