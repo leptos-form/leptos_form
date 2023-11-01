@@ -2,6 +2,8 @@
 # NOTE: must run:
 # pip install pre-commit
 # curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+# cargo install cargo-machete --locked
+# cargo install cargo-deny --locked
 # pre-commit install --hook-type pre-commit
 # pre-commit install --hook-type pre-push
 default_install_hook_types:

@@ -18,6 +18,11 @@ jobs:
     # TODO: change to dtolnay/rust-toolchain@stable once 1.75.0 lands on stable
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: clippy,rustfmt
+
+    - run: cargo install cargo-machete --locked
+    - run: cargo install cargo-deny --locked
 
     - run: touch requirements.txt
     - uses: actions/setup-python@v4
