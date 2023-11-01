@@ -3,7 +3,7 @@ members = ["leptos_form"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 rust-version = "1.75.0"
 authors = ["Trey Lowerison <19714082+tlowerison@users.noreply.github.com>"]
