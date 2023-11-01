@@ -31,6 +31,7 @@ alt="Unsafe Rust forbidden" />
 * [Docs](https://docs.rs/leptos_form)
 * [GitHub repository](https://github.com/tlowerison/leptos_form)
 * [Cargo package](https://crates.io/crates/leptos_form)
+* Minimum supported Rust version: 1.75.0 or later
 
 ## Features
 

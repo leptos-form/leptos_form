@@ -4,6 +4,7 @@ version.workspace = true
 authors.workspace = true
 edition.workspace = true
 repository.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 leptos_form_proc_macros_core.workspace = true

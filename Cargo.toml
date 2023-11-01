@@ -7,6 +7,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Trey Lowerison <19714082+tlowerison@users.noreply.github.com>"]
 repository = "https://github.com/tlowerison/leptos_form"
+rust-version = "1.75.0"
 
 [workspace.dependencies]
 # internal to this workspace
