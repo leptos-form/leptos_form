@@ -39,7 +39,7 @@ jobs:
 
     - run: pip install pre-commit
 
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - run: pre-commit run --all-files --hook-stage push
 
