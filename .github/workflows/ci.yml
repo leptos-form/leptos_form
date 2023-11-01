@@ -22,6 +22,10 @@ jobs:
       with:
         components: clippy,rustfmt
 
+    - uses: Swatinem/rust-cache@v2
+      with:
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+    
     - run: cargo install cargo-machete --locked
 
     - run: cargo install cargo-deny --locked
