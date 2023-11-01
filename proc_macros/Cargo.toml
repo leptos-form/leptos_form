@@ -1,10 +1,12 @@
 [package]
 name = "leptos_form_proc_macros"
+description = "Proc macro used by leptos_form."
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+license.workspace = true
 
 [dependencies]
 leptos_form_proc_macros_core.workspace = true
