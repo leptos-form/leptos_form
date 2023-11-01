@@ -115,3 +115,11 @@ repos:
         types: [rust]
         pass_filenames: false
 
+      - id: cargo-doc
+        name: cargo-doc
+        description: ensure cargo doc builds
+        stages: [push]
+        entry: RUSTDOCFLAGS="-D warnings" cargo doc --all-features
+        language: system
+        types: [rust]
+        pass_filenames: false
