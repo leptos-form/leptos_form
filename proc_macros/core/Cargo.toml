@@ -3,10 +3,12 @@ name = "leptos_form_proc_macros_core"
 description = "Core proc macro utilities used by leptos_form."
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
-rust-version.workspace = true
-license.workspace = true
+license-file.workspace = true
+categories.workspace = true
+keywords.workspace = true
 
 [dependencies]
 convert_case.workspace = true

@@ -1,4 +1,4 @@
-#![doc = include_str!("../Crate.md")]
+#![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 
 pub use ::leptos_form_core::*;
