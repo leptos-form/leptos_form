@@ -17,7 +17,8 @@ jobs:
           token: ${{ secrets.RELEASE_PLZ_TOKEN }}
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        # TODO: change to dtolnay/rust-toolchain@stable once 1.75.0 lands on stable
+        uses: dtolnay/rust-toolchain@nightly
 
       - name: Run release-plz
         uses: MarcoIeni/release-plz-action@v0.5
