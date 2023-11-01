@@ -2,9 +2,8 @@ name: CodeCov
 
 on:
   push:
-    branches: [ $default-branch ]
-  pull_request:
-    branches: [ $default-branch ]
+    branches:
+    - main
 
 env:
   CARGO_TERM_COLOR: always
