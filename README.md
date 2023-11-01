@@ -2,7 +2,7 @@
 
 <div align="center">
 <!-- CI -->
-<img src="https://github.com/tlowerison/leptos_form/actions/workflows/ci/badge.svg" />
+<img src="https://github.com/tlowerison/leptos_form/actions/workflows/ci.yml/badge.svg" />
 <!-- codecov -->
 <img src="https://codecov.io/gh/tlowerison/leptos_form/branch/main/graph/badge.svg" />
 <!-- Crates version -->
