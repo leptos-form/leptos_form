@@ -19,10 +19,12 @@ jobs:
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@nightly
 
+    - run: touch requirements.txt
     - uses: actions/setup-python@v4
       with:
         python-version: "3.10"
         cache: "pip" # caching pip dependencies
+    - run: rm requirements.txt
 
     - run: pip install pre-commit
 
