@@ -1,4 +1,5 @@
 #![doc = include_str!("../README.md")]
+#![cfg_attr(CHANNEL_NIGHTLY, feature(doc_auto_cfg))]
 #![forbid(unsafe_code)]
 
 pub use ::leptos_form_core::*;

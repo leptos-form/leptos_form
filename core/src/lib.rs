@@ -1,4 +1,5 @@
 #![allow(clippy::non_canonical_clone_impl)]
+#![cfg_attr(CHANNEL_NIGHTLY, feature(doc_auto_cfg))]
 
 #[macro_use]
 extern crate derivative;
