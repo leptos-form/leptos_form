@@ -58,12 +58,17 @@ pub fn FormSubmissionHandler<IV1: IntoView + 'static, IV2: IntoView + 'static, I
     }}}
 }
 
+/// Aderived signal returning a style string which should be placed on the top level component's `style:opacity` prop
+pub type StyleSignal = Rc<dyn Fn() -> Option<&'static str>>;
+
 #[component]
 pub fn MaterialIcon(
     d: &'static str,
     #[prop(optional_no_strip, into)] class: Option<Oco<'static, str>>,
-    #[prop(optional_no_strip, into)] style: Option<Oco<'static, str>>,
+    #[prop(optional_no_strip, into)] cursor: Option<StyleSignal>,
     #[prop(optional_no_strip, into)] height: Option<usize>,
+    #[prop(optional_no_strip, into)] opacity: Option<StyleSignal>,
+    #[prop(optional_no_strip, into)] style: Option<Oco<'static, str>>,
     #[prop(optional_no_strip, into)] width: Option<usize>,
 ) -> impl IntoView {
     let transform = svg_transform(24, 24, height, width);
@@ -73,6 +78,8 @@ pub fn MaterialIcon(
         (None, Some(transform)) => Some(transform),
         (None, None) => None,
     };
+    let cursor = move || cursor.clone().and_then(|x| x());
+    let opacity = move || opacity.clone().and_then(|x| x());
     view! {
         <svg
             class={class}
@@ -81,6 +88,8 @@ pub fn MaterialIcon(
             width="24"
             viewBox="0 -960 960 960"
             fill="currentColor"
+            style:cursor=cursor
+            style:opacity=opacity
             style={style}
         >
             <path d={d} />
@@ -119,17 +128,21 @@ fn svg_transform(
 #[component]
 pub fn MaterialClose(
     #[prop(optional_no_strip, into)] class: Option<Oco<'static, str>>,
-    #[prop(optional_no_strip, into)] style: Option<Oco<'static, str>>,
+    #[prop(optional_no_strip, into)] cursor: Option<StyleSignal>,
     #[prop(optional_no_strip, into)] height: Option<usize>,
+    #[prop(optional_no_strip, into)] opacity: Option<StyleSignal>,
+    #[prop(optional_no_strip, into)] style: Option<Oco<'static, str>>,
     #[prop(optional_no_strip, into)] width: Option<usize>,
 ) -> impl IntoView {
     view! {
         <MaterialIcon
+            class=class
+            cursor=cursor
             d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"
-            class={class}
-            height={height}
-            style={style}
-            width={width}
+            height=height
+            opacity=opacity
+            style=style
+            width=width
         />
     }
 }

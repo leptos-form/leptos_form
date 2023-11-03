@@ -39,14 +39,11 @@ macro_rules! num_impl {
                 view! {
                     <input
                         type=num_impl!(@type $($($type)?)?)
-                        id={props.id.unwrap_or_else(|| props.name.clone())}
-                        name={props.name}
-                        min=num_impl!(@min $ty $($(, $min)?)?)
-                        max=num_impl!(@max $ty $($(, $max)?)?)
                         class={class}
-                        prop:class={move || class.with(|x| x.as_ref().map(|x| JsValue::from_str(&*x)))}
-                        value=move || props.signal.get().value
-                        prop:value={props.signal.0}
+                        id={props.id.unwrap_or_else(|| props.name.clone())}
+                        max=num_impl!(@max $ty $($(, $max)?)?)
+                        min=num_impl!(@min $ty $($(, $min)?)?)
+                        name={props.name}
                         on:keydown=num_impl!(@prevent_invalid_keystrokes value $($($type)?)?)
                         on:input=move |ev| props.signal.0.update(|x| x.value = event_target_value(&ev))
                         on:change=move |_| {
@@ -56,6 +53,10 @@ macro_rules! num_impl {
                                 props.signal.update(|x| x.error = None);
                             }
                         }
+                        prop:class={move || class.with(|x| x.as_ref().map(|x| JsValue::from_str(&*x)))}
+                        prop:value={props.signal.0}
+                        style={props.style}
+                        value=move || props.signal.get().value
                     />
                 }
             }
