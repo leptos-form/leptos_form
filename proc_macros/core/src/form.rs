@@ -44,7 +44,7 @@ struct FormOpts {
 impl FormOpts {
     fn one_component_kind(self) -> Result<Self, darling::Error> {
         if self.component.is_some() && self.island.is_some() {
-            Err(darling::Error::custom("Cannot set component and island").with_span(&self.island.unwrap().span()))
+            Err(darling::Error::custom("cannot set component and island").with_span(&self.island.unwrap().span()))
         } else {
             Ok(self)
         }
@@ -248,13 +248,17 @@ impl FromMeta for Action {
             let first_arg = expr_call.args.first().ok_or_else(|| {
                 Error::custom("expected an argument to the function call").with_span(&expr_call.args.span())
             })?;
+            if expr_call.args.len() > 1 {
+                return Err(Error::custom("expected a function call with exactly one argument")
+                    .with_span(&expr_call.args.span()));
+            }
             let arg = match first_arg {
                 syn::Expr::Path(expr_path) => expr_path
                     .path
                     .get_ident()
                     .ok_or_else(|| Error::custom("only idents are supported here").with_span(&expr_path.span()))?
                     .clone(),
-                _ => return Err(Error::unexpected_expr_type(first_arg)),
+                _ => return Err(Error::custom("only idents are supported here").with_span(&first_arg.span())),
             };
             Ok((server_fn_path, arg))
         };
@@ -282,7 +286,7 @@ impl FromMeta for Action {
                 let (server_fn_path, arg) = if let syn::Expr::Call(expr_call) = first {
                     parse_fn_call(expr_call)
                 } else {
-                    Err(Error::unexpected_expr_type(first))
+                    Err(Error::custom("expected a function call expression").with_span(&first.span()))
                 }?;
 
                 let url = if let syn::Expr::Lit(syn::ExprLit {
@@ -292,7 +296,7 @@ impl FromMeta for Action {
                 {
                     Ok(lit_str.clone())
                 } else {
-                    Err(Error::unexpected_expr_type(second))
+                    Err(Error::custom("expected an endpoint string literal").with_span(&first.span()))
                 }?;
 
                 Self::Path {
@@ -301,7 +305,11 @@ impl FromMeta for Action {
                     url: Some(url),
                 }
             }
-            _ => return Err(Error::unexpected_expr_type(expr)),
+            _ => {
+                return Err(Error::custom(
+                    "action must be specified with an endpoint string literal or a server fn call expression",
+                ))
+            }
         })
     }
 }
@@ -309,10 +317,15 @@ impl FromMeta for Action {
 impl FromMeta for Element {
     fn from_meta(meta: &syn::Meta) -> Result<Self, darling::Error> {
         let ty: syn::Type = match &meta {
-            syn::Meta::List(meta_list) => {
-                parse2(meta_list.tokens.clone()).map_err(|err| darling::Error::from(err).with_span(&meta.span()))?
+            syn::Meta::List(meta_list) => parse2(meta_list.tokens.clone()).map_err(|_| {
+                darling::Error::custom("expected valid rust type".to_string()).with_span(&meta_list.tokens.span())
+            })?,
+            syn::Meta::Path(_) => {
+                return Err(darling::Error::custom(
+                    "el type unspecified, use `el(leptos::html::HtmlElement<..>)`",
+                ))
             }
-            syn::Meta::Path(_) | syn::Meta::NameValue(_) => {
+            syn::Meta::NameValue(_) => {
                 return Err(darling::Error::custom(
                     "missing el type, specify using parentheses like `el(leptos::html::HtmlElement<..>)`",
                 )
@@ -346,7 +359,7 @@ impl FromMeta for MapSubmit {
         Ok(match expr {
             syn::Expr::Path(expr_path) => Self::Path(expr_path.path.clone()),
             syn::Expr::Closure(expr_closure) => Self::Defn(expr_closure.clone()),
-            _ => return Err(Error::unexpected_expr_type(expr)),
+            _ => return Err(Error::custom("expected a path or a closure").with_span(&expr.span())),
         })
     }
 }
@@ -534,7 +547,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                         None => #leptos_krate::View::default(),
                     });
 
-                    let ty = <std::marker::PhantomData<(#field_ty, #field_el_ty)> as Default>::default();
+                    let ty = <::std::marker::PhantomData<(#field_ty, #field_el_ty)> as Default>::default();
                     let #field_view_ident = #leptos_krate::view! { <FormField props=#build_props_ident ty=ty /> };
                 ),
                 build_props_ident,
@@ -662,7 +675,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                         )
                     },
                     Some(MapSubmit::Path(path)) => quote!(
-                        let #data_ident = map_submit(#leptos_form_krate::FormDiff { initial: #initial_ident.clone(), current: #data_ident });
+                        let #data_ident = #path(#leptos_form_krate::FormDiff { initial: #initial_ident.clone(), current: #data_ident });
                     ),
                     None => quote!(),
                 }
@@ -751,8 +764,8 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             };
 
             let form_submission_handler = if action.is_path() {
-                let error_view_ty = if on_error.is_some() { quote!() } else { quote!(error_view_ty={<std::marker::PhantomData<#leptos_krate::View> as Default>::default()}) };
-                let success_view_ty = if on_success.is_some() { quote!() } else { quote!(success_view_ty={<std::marker::PhantomData<#leptos_krate::View> as Default>::default()}) };
+                let error_view_ty = if on_error.is_some() { quote!() } else { quote!(error_view_ty={<::std::marker::PhantomData<#leptos_krate::View> as Default>::default()}) };
+                let success_view_ty = if on_success.is_some() { quote!() } else { quote!(success_view_ty={<::std::marker::PhantomData<#leptos_krate::View> as Default>::default()}) };
 
                 let on_error = on_error.iter();
                 let on_success = on_success.iter();
@@ -798,7 +811,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
                         #optional_reset_on_success_effect
 
-                        let ty = <std::marker::PhantomData<(#ident, #leptos_krate::View)> as Default>::default();
+                        let ty = <::std::marker::PhantomData<(#ident, #leptos_krate::View)> as Default>::default();
 
                         #leptos_krate::view! {
                             #open_tag
@@ -1271,8 +1284,368 @@ mod test {
     use super::*;
     use pretty_assertions::assert_eq;
 
+    fn expect_err(res: Result<TokenStream, Error>) -> Error {
+        match res {
+            Ok(tokens) => panic!("expected failure but derive macro successfully ran with tokens:\n{tokens}"),
+            Err(err) => err,
+        }
+    }
+
     #[test]
-    fn test1() -> Result<(), Error> {
+    fn form_cannot_be_derived_on_unit_structs() {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component)]
+            pub struct MyFormData;
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!(
+            "Unsupported shape `no fields`. Expected named fields or unnamed fields.",
+            format!("{err}")
+        );
+    }
+
+    #[test]
+    fn component_attribute_must_provide_arguments() {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component)]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!("component forms must specify an action attribute", format!("{err}"));
+    }
+
+    #[test]
+    fn component_attribute_must_not_use_name_value_meta() {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component = "/api/test")]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!("unexpected name/value meta attribute", format!("{err}"));
+    }
+
+    #[test]
+    fn component_and_island_attributes_cannot_be_used_simultaneously() {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = "/api/test"), island(action = "/api/test"))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!("cannot set component and island", format!("{err}"));
+    }
+
+    #[test]
+    fn action_server_fn_must_be_a_valid_expr_fn_call() {
+        // test that action function specification does not accept paths
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = my_action))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!(
+            "action must be specified with an endpoint string literal or a server fn call expression",
+            format!("{err}")
+        );
+
+        // test that action function call expressions do not work without arguments
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = my_action()))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!("expected an argument to the function call", format!("{err}"));
+
+        // test that action function call expressions do not work with more than one argument
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = my_action(too, many, args)))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!("expected a function call with exactly one argument", format!("{err}"));
+
+        // test that action function call expressions do not work when the argument provided is a path and not an ident
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = my_action(not::an::ident)))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!("only idents are supported here", format!("{err}"));
+
+        // test that action function call expressions do not work when the argument provided is a literal and not an ident
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = my_action(1)))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!("only idents are supported here", format!("{err}"));
+    }
+
+    #[test]
+    fn action_server_fn_accepts_valid_expr_fn_call() -> Result<(), Error> {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = my_action(my_form_data)))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        derive_form(input)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn action_server_fn_rejects_invalid_tuples() {
+        // missing tuple elements should be rejected
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = ()))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!(
+            r#"ActionForm cannot be used without full specification like so: `action = (server_fn_path(data), "/api/url")`"#,
+            format!("{err}")
+        );
+
+        // missing tuple elements should be rejected
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = ("/api/test",)))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+        assert_eq!(
+            r#"ActionForm cannot be used without full specification like so: `action = (server_fn_path(data), "/api/url")`"#,
+            format!("{err}")
+        );
+
+        // tuple ordering should be (fn call, endpoint literal)
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = ("/api/test", my_action(my_form_data))))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+        assert_eq!("expected a function call expression", format!("{err}"));
+
+        // enforce string literal parsing on second argument
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = (my_action(my_form_data), my_action(my_form_data))))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+        assert_eq!("expected an endpoint string literal", format!("{err}"));
+    }
+
+    #[test]
+    fn action_server_fn_accepts_valid_tuple_of_expr_fn_call_and_endpoint_path() -> Result<(), Error> {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = (my_action(my_form_data), "/api/test")))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        derive_form(input)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn field_element_rejects_path_meta() {
+        let input = quote!(
+            #[derive(Form)]
+            pub struct MyFormData {
+                #[form(el)]
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!(
+            "el type unspecified, use `el(leptos::html::HtmlElement<..>)`",
+            format!("{err}")
+        );
+    }
+
+    #[test]
+    fn field_element_rejects_name_value_meta() {
+        let input = quote!(
+            #[derive(Form)]
+            pub struct MyFormData {
+                #[form(el = ::leptos::HtmlElement<::leptos::html::Input>)]
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        // less than ideal error message but cannot control that darling attempts to parse the `el = TokenStream` and fails
+        // prior to calling from_meta
+        assert_eq!("unexpected end of input, expected an expression", format!("{err}"));
+    }
+
+    #[test]
+    fn field_element_rejects_non_types() {
+        let input = quote!(
+            #[derive(Form)]
+            pub struct MyFormData {
+                #[form(el(1+1))]
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        // less than ideal error message but cannot control that darling attempts to parse the `el = TokenStream` and fails
+        // prior to calling from_meta
+        assert_eq!("expected valid rust type", format!("{err}"));
+    }
+
+    #[test]
+    fn field_element_accepts_valid_types_when_parenthesized() -> Result<(), Error> {
+        let input = quote!(
+            #[derive(Form)]
+            pub struct MyFormData {
+                #[form(el(::leptos::HtmlElement<::leptos::html::Input>))]
+                pub id: Uuid,
+            }
+        );
+
+        derive_form(input)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn group_item_rejects_non_container() {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(groups(1))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!("expected argument of the form `container(..)`", format!("{err}"));
+    }
+
+    #[test]
+    fn group_item_accepts_container() -> Result<(), Error> {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(groups(container(tag = "div")))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        derive_form(input)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn map_submit_rejects_non_path_or_closure() {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(
+                action = "foo",
+                map_submit = 1 + 1,
+            ))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!("expected a path or a closure", format!("{err}"));
+    }
+
+    #[test]
+    fn map_submit_accepts_path() -> Result<(), Error> {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(
+                action = "foo",
+                map_submit = map_my_submit,
+            ))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        derive_form(input)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn basic_form_comparison_check() -> Result<(), Error> {
         let input = quote!(
             #[derive(Form)]
             #[form(label(wrap(rename_all = "Title Case")))]
@@ -1388,7 +1761,7 @@ mod test {
                             None => #leptos_krate::View::default(),
                         },
                     );
-                    let ty = <std::marker::PhantomData<(Uuid, <Uuid as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
+                    let ty = <::std::marker::PhantomData<(Uuid, <Uuid as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
                     let _id_view = #leptos_krate::view! { <FormField props=_id_props ty=ty /> };
 
                     let _slug_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "slug");
@@ -1411,7 +1784,7 @@ mod test {
                             None => #leptos_krate::View::default(),
                         },
                     );
-                    let ty = <std::marker::PhantomData<(String, <String as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
+                    let ty = <::std::marker::PhantomData<(String, <String as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
                     let _slug_view = #leptos_krate::view! { <FormField props=_slug_props ty=ty /> };
 
                     let _created_at_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "created-at");
@@ -1434,7 +1807,7 @@ mod test {
                             None => #leptos_krate::View::default(),
                         },
                     );
-                    let ty = <std::marker::PhantomData<(chrono::NaiveDateTime, <chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
+                    let ty = <::std::marker::PhantomData<(chrono::NaiveDateTime, <chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
                     let _created_at_view = #leptos_krate::view! { <FormField props=_created_at_props ty=ty /> };
 
                     let _count_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "count");
@@ -1457,7 +1830,7 @@ mod test {
                             None => #leptos_krate::View::default(),
                         },
                     );
-                    let ty = <std::marker::PhantomData<(u8, <u8 as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
+                    let ty = <::std::marker::PhantomData<(u8, <u8 as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
                     let _count_view = #leptos_krate::view! { <FormField props=_count_props ty=ty /> };
 
                     #leptos_krate::view! {
@@ -1500,7 +1873,7 @@ mod test {
     }
 
     #[test]
-    fn test2() -> Result<(), Error> {
+    fn both_form_and_field_level_class_and_labels_work() -> Result<(), Error> {
         let input = quote!(
             #[derive(Form)]
             pub struct MyFormData {
@@ -1602,7 +1975,7 @@ mod test {
                             None => #leptos_krate::View::default(),
                         },
                     );
-                    let ty = <std::marker::PhantomData<(Uuid, <Uuid as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
+                    let ty = <::std::marker::PhantomData<(Uuid, <Uuid as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
                     let _abc_123_view = #leptos_krate::view! { <FormField props=_abc_123_props ty=ty /> };
 
                     let _zz_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "zz");
@@ -1625,7 +1998,7 @@ mod test {
                             None => #leptos_krate::View::default(),
                         },
                     );
-                    let ty = <std::marker::PhantomData<(u8, <u8 as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
+                    let ty = <::std::marker::PhantomData<(u8, <u8 as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
                     let _zz_view = #leptos_krate::view! { <FormField props=_zz_props ty=ty /> };
 
                     #leptos_krate::view! {
@@ -1655,7 +2028,7 @@ mod test {
     }
 
     #[test]
-    fn test3() -> Result<(), Error> {
+    fn component_is_produced_correctly() -> Result<(), Error> {
         let input = quote!(
             #[derive(Form)]
             #[form(component(action = "/api/my-form-data", reset_on_success))]
@@ -1748,7 +2121,7 @@ mod test {
                             None => #leptos_krate::View::default(),
                         }
                     );
-                    let ty = <std::marker::PhantomData<(u8, <u8 as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
+                    let ty = <::std::marker::PhantomData<(u8, <u8 as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
                     let _ayo_view = #leptos_krate::view! { <FormField props=_ayo_props ty=ty /> };
 
                     #leptos_krate::view! {
@@ -1787,28 +2160,228 @@ mod test {
                         .build()
                     );
                     let parse_error_handler = |err: #leptos_form_krate::FormError| #leptos_krate::logging::debug_warn!("{err}");
-                    // #leptos_krate::create_effect({
-                    //     let initial = initial.clone();
-                    //     move |_| {
-                    //         if let Some(Ok(_)) = action.value().get() {
-                    //             let config = __MyFormDataConfig {
-                    //                 ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
-                    //             };
-                    //             let new_props = #leptos_form_krate::RenderProps::builder()
-                    //                 .id(None)
-                    //                 .name("")
-                    //                 .signal(initial.clone().into_signal(&config))
-                    //                 .config(config.clone())
-                    //                 .build();
-                    //             signal.update(move |props| *props = new_props);
-                    //         }
-                    //     }
-                    // });
-                    let ty = <std::marker::PhantomData<(MyFormData, #leptos_krate::View)> as Default>::default();
+                    let ty = <::std::marker::PhantomData<(MyFormData, #leptos_krate::View)> as Default>::default();
                     #leptos_krate::view! {
                         <Form action="/api/my-form-data">
                             {move || #leptos_krate::view! { <FormField props=signal.get() ty=ty /> }}
-                            // <FormSubmissionHandler action=action />
+                        </Form>
+                    }
+                }
+            }
+        );
+
+        let output = derive_form(input)?;
+
+        let expected = cleanup(&expected);
+        let output = cleanup(&output);
+
+        let expected = pretty(expected)?;
+        let output = pretty(output)?;
+
+        assert_eq!(expected, output);
+
+        Ok(())
+    }
+
+    #[test]
+    fn island_is_produced_correctly() -> Result<(), Error> {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(island(
+                action = my_server_fn(my_form_data),
+                map_submit = my_map_submit,
+                reset_on_success,
+            ))]
+            #[form(label(wrap(
+                id = "default-label-id",
+                class = "default-label-class",
+                style = "default-label-style",
+                rename_all = "PascalCase"
+            )))]
+            pub struct MyFormData {
+                #[form(label(adjacent(
+                    container(
+                        tag = "div",
+                        id = "ayo-label-container-id",
+                        class = "ayo-label-container-class",
+                        style = "ayo-label-container-style"
+                    ),
+                    id = "ayo-label-id",
+                    class = "ayo-label-class",
+                    value = "AYO",
+                )))]
+                pub ayo: u8,
+            }
+        );
+
+        let leptos_krate = quote!(::leptos_form::internal::leptos);
+        let leptos_router_krate = quote!(::leptos_form::internal::leptos_router);
+        let leptos_form_krate = quote!(::leptos_form);
+
+        let expected = quote!(
+            #[derive(Clone, Copy, Debug)]
+            pub struct __MyFormDataSignal {
+                pub ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Signal,
+            }
+
+            #[derive(Clone, Debug, Default)]
+            pub struct __MyFormDataConfig {
+                pub ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config,
+            }
+
+            impl ::core::convert::AsRef<__MyFormDataSignal> for __MyFormDataSignal {
+                fn as_ref(&self) -> &Self {
+                    self
+                }
+            }
+
+            impl ::core::convert::AsMut<__MyFormDataSignal> for __MyFormDataSignal {
+                fn as_mut(&mut self) -> &mut Self {
+                    self
+                }
+            }
+
+            impl #leptos_form_krate::DefaultHtmlElement for MyFormData {
+                type El = #leptos_krate::View;
+            }
+
+            impl #leptos_form_krate::FormField<#leptos_krate::View> for MyFormData {
+                type Config = __MyFormDataConfig;
+                type Signal = __MyFormDataSignal;
+
+                fn default_signal() -> Self::Signal {
+                    __MyFormDataSignal {
+                        ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
+                    }
+                }
+                fn is_default_value(signal: &Self::Signal) -> bool {
+                    true && <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.ayo)
+                }
+                fn into_signal(self, config: &Self::Config) -> Self::Signal {
+                    __MyFormDataSignal {
+                        ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::into_signal(self.ayo, &config.ayo),
+                    }
+                }
+                fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, #leptos_form_krate::FormError> {
+                    Ok(MyFormData {
+                        ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::try_from_signal(signal.ayo, &config.ayo)?,
+                    })
+                }
+                fn reset_initial_value(signal: &Self::Signal) {
+                    <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::reset_initial_value(&signal.ayo);
+                }
+            }
+
+            impl #leptos_form_krate::FormComponent<#leptos_krate::View> for MyFormData {
+                #[allow(unused_imports)]
+                fn render(props: #leptos_form_krate::RenderProps<Self::Signal, Self::Config>) -> impl #leptos_krate::IntoView {
+                    use #leptos_form_krate::FormField;
+                    use #leptos_krate::{IntoAttribute, IntoView};
+
+                    let _ayo_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "ayo");
+                    let _ayo_name = #leptos_form_krate::format_form_name(Some(&props.name), "ayo");
+                    let _ayo_props = #leptos_form_krate::RenderProps::builder()
+                        .id(_ayo_id.clone())
+                        .name(_ayo_name.clone())
+                        .field_changed_class(props.field_changed_class.clone())
+                        .signal(props.signal.ayo.clone())
+                        .config(<u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default())
+                        .build();
+
+                    let _ayo_error = move || <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::with_error(
+                        &_ayo_props.signal,
+                        |error| match error {
+                            Some(form_error) => {
+                                let error = format!("{form_error}");
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red;">{error}</span> })
+                            },
+                            None => #leptos_krate::View::default(),
+                        }
+                    );
+                    let ty = <::std::marker::PhantomData<(u8, <u8 as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
+                    let _ayo_view = #leptos_krate::view! { <FormField props=_ayo_props ty=ty /> };
+
+                    #leptos_krate::view! {
+                        <div id="ayo-label-container-id" class="ayo-label-container-class" style="ayo-label-container-style">
+                            <label for={_ayo_id} id="ayo-label-id" class="ayo-label-class" style="default-label-style">
+                                "AYO"
+                            </label>
+                            {_ayo_view}
+                            {_ayo_error}
+                        </div>
+                    }
+                }
+            }
+
+            pub use leptos_form_component_my_form_data::*;
+
+            mod leptos_form_component_my_form_data {
+                use super::*;
+                use #leptos_krate::IntoView;
+
+                #[allow(unused_imports)]
+                #[#leptos_krate::island]
+                pub fn MyFormData(initial: MyFormData) -> impl IntoView {
+                    use #leptos_form_krate::{FormField, components::FormSubmissionHandler};
+                    use #leptos_krate::{IntoAttribute, IntoView, SignalGet, SignalUpdate, SignalWith};
+                    use ::std::rc::Rc;
+                    use #leptos_router_krate::Form;
+
+                    fn server_fn_inference<T: Clone, U>(f: impl Fn(T) -> U) -> impl Fn(&T) -> U {
+                        move |data: &T| f(data.clone())
+                    }
+                    let action = #leptos_krate::create_action(server_fn_inference(my_server_fn));
+
+                    let config = __MyFormDataConfig {
+                        ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
+                    };
+
+                    let signal = #leptos_krate::create_rw_signal(#leptos_form_krate::RenderProps::builder()
+                        .id(None)
+                        .name("my_form_data")
+                        .signal(initial.clone().into_signal(&config))
+                        .config(config.clone())
+                        .build()
+                    );
+                    let parse_error_handler = |err: #leptos_form_krate::FormError| #leptos_krate::logging::debug_warn!("{err}");
+                    #leptos_krate::create_effect({
+                        let initial = initial.clone();
+                        move |_| {
+                            if let Some(Ok(_)) = action.value().get() {
+                                let config = __MyFormDataConfig {
+                                    ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
+                                };
+                                let new_props = #leptos_form_krate::RenderProps::builder()
+                                    .id(None)
+                                    .name("my_form_data")
+                                    .signal(initial.clone().into_signal(&config))
+                                    .config(config.clone())
+                                    .build();
+                                signal.update(move |props| *props = new_props);
+                            }
+                        }
+                    });
+                    let ty = <::std::marker::PhantomData<(MyFormData, #leptos_krate::View)> as Default>::default();
+                    #leptos_krate::view! {
+                        <Form
+                            action="/api/my_server_fn"
+                            on:submit=move |ev| {
+                                use ::leptos_form::internal::wasm_bindgen::UnwrapThrowExt;
+                                ev.prevent_default();
+                                let data = match signal.with(|props| <MyFormData as #leptos_form_krate::FormField<#leptos_krate::View>>::try_from_signal(props.signal, &config)) {
+                                    Ok(parsed) => parsed,
+                                    Err(err) => return parse_error_handler(err),
+                                };
+                                let data = my_map_submit(#leptos_form_krate::FormDiff { initial: initial.clone(), current: data });
+                                action.dispatch(data);
+                            }
+                        >
+                            {move || #leptos_krate::view! { <FormField props=signal.get() ty=ty /> }}
+                            <FormSubmissionHandler
+                                action=action
+                                error_view_ty={<::std::marker::PhantomData<#leptos_krate::View> as Default>::default()}
+                                success_view_ty={<::std::marker::PhantomData<#leptos_krate::View> as Default>::default()}
+                            />
                         </Form>
                     }
                 }
