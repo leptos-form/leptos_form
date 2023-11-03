@@ -70,6 +70,8 @@ pub struct RenderProps<T: 'static, Config = ()> {
     #[builder(default)]
     pub class: Option<Oco<'static, str>>,
     #[builder(default)]
+    pub style: Option<Oco<'static, str>>,
+    #[builder(default)]
     pub field_changed_class: Option<Oco<'static, str>>,
     pub signal: T,
     pub config: Config,
@@ -81,8 +83,10 @@ pub struct RenderProps<T: 'static, Config = ()> {
 pub struct FormFieldSignal<T: 'static>(pub RwSignal<FormFieldSignalValue<T>>);
 
 /// A signal value holding a current state, an initial state, and possibly an error.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Deref, DerefMut)]
 pub struct FormFieldSignalValue<T> {
+    #[deref]
+    #[deref_mut]
     pub value: T,
     pub initial: Option<T>,
     pub error: Option<FormError>,

@@ -25,10 +25,11 @@ use ::syn::{parse2, parse_str};
     and_then = "Self::one_component_kind"
 )]
 struct FormOpts {
-    class: Option<syn::LitStr>,
     component: Option<ComponentConfigSpanned>,
     error: Option<SpannedValue<ErrorHandler>>,
     field_class: Option<syn::LitStr>,
+    field_style: Option<syn::LitStr>,
+    form_props: Option<syn::Meta>,
     groups: Option<Groups>,
     internal: Option<bool>,
     id: Option<syn::LitStr>,
@@ -59,6 +60,7 @@ struct ComponentConfigSpanned {
 #[derive(Clone, Debug, Default, FromMeta)]
 struct ComponentConfig {
     action: Option<Action>,
+    class: Option<syn::LitStr>,
     field_changed_class: Option<syn::LitStr>,
     map_submit: Option<MapSubmit>,
     name: Option<syn::Ident>,
@@ -66,6 +68,7 @@ struct ComponentConfig {
     on_success: Option<syn::Expr>,
     reset_on_success: Option<bool>,
     submit: Option<syn::Expr>,
+    style: Option<syn::LitStr>,
 }
 
 #[derive(Clone, Debug, Default, FromMeta, IsVariant)]
@@ -81,12 +84,14 @@ enum FormLabel {
         id: Option<syn::LitStr>,
         class: Option<syn::LitStr>,
         rename_all: Option<LabelCase>,
+        style: Option<syn::LitStr>,
     },
     #[darling(rename = "wrap")]
     Wrap {
         id: Option<syn::LitStr>,
         class: Option<syn::LitStr>,
         rename_all: Option<LabelCase>,
+        style: Option<syn::LitStr>,
     },
 }
 
@@ -108,6 +113,15 @@ struct Container {
     tag: syn::Ident,
     id: Option<syn::LitStr>,
     class: Option<syn::LitStr>,
+    style: Option<syn::LitStr>,
+}
+
+#[derive(Clone, Debug, FromMeta)]
+struct FieldLabelContainer {
+    tag: Option<syn::Ident>,
+    id: Option<syn::LitStr>,
+    class: Option<syn::LitStr>,
+    style: Option<syn::LitStr>,
 }
 
 #[derive(Clone, Debug, IsVariant)]
@@ -130,6 +144,7 @@ struct FormField {
     group: Option<SpannedValue<usize>>,
     id: Option<syn::LitStr>,
     label: Option<FieldLabel>,
+    style: Option<syn::LitStr>,
     // forwarded fields
     vis: syn::Visibility,
     ident: Option<syn::Ident>,
@@ -143,9 +158,10 @@ struct Element(syn::Type);
 enum FieldLabel {
     #[darling(rename = "adjacent")]
     Adjacent {
-        container: Option<Container>,
+        container: Option<FieldLabelContainer>,
         id: Option<syn::LitStr>,
         class: Option<syn::LitStr>,
+        style: Option<syn::LitStr>,
         value: Option<syn::LitStr>,
     },
     #[darling(rename = "default")]
@@ -157,6 +173,7 @@ enum FieldLabel {
     Wrap {
         id: Option<syn::LitStr>,
         class: Option<syn::LitStr>,
+        style: Option<syn::LitStr>,
         value: Option<syn::LitStr>,
     },
 }
@@ -338,11 +355,12 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
     let ast: syn::DeriveInput = parse2(tokens)?;
     let form_opts = FormOpts::from_derive_input(&ast)?;
     let FormOpts {
-        class: form_class,
         component,
         data,
         error: form_error_handler,
         field_class,
+        field_style,
+        form_props,
         groups,
         id: form_id,
         ident,
@@ -459,6 +477,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
             let id = field.id.clone().map(|x| x.value());
             let class = field.class.clone().or_else(|| field_class.clone()).into_iter();
+            let style = field.style.clone().or_else(|| field_style.clone()).into_iter();
 
             let config = field.config.clone() .unwrap_or_else(|| parse2(quote!(
                 <#field_ty as #leptos_form_krate::FormField<#field_el_ty>>::Config::default()
@@ -501,6 +520,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                         .id(#field_id_ident.clone())
                         .name(#field_name_ident.clone())
                         #(.class(#leptos_krate::Oco::Borrowed(#class)))*
+                        #(.style(#leptos_krate::Oco::Borrowed(#style)))*
                         .field_changed_class(#field_changed_class)
                         .signal(#props_ident.signal.#field_ax.clone())
                         .config(#config)
@@ -555,18 +575,20 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                     None => ungrouped.push(wrapped_field_view),
                 };
             }
-            let rendered_groups = containers
-                .into_iter()
-                .zip(groups)
-                .map(|(Container { tag, id, class }, group)| {
-                    let id = id.into_iter();
-                    let class = class.into_iter();
-                    quote!(
-                        <#tag #(id=#id)* #(class=#class)*>
-                            #(#group)*
-                        </#tag>
-                    )
-                });
+            let rendered_groups =
+                containers
+                    .into_iter()
+                    .zip(groups)
+                    .map(|(Container { tag, id, class, style }, group)| {
+                        let id = id.into_iter();
+                        let class = class.into_iter();
+                        let style = style.into_iter();
+                        quote!(
+                            <#tag #(id=#id)* #(class=#class)* #(style=#style)*>
+                                #(#group)*
+                            </#tag>
+                        )
+                    });
 
             quote!(
                 #(#rendered_groups)*
@@ -600,6 +622,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             }
             let ComponentConfig {
                 action,
+                class: form_class,
                 field_changed_class,
                 map_submit,
                 name: component_name,
@@ -607,11 +630,13 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 on_success,
                 reset_on_success,
                 submit,
+                style: form_style,
             } = &component_config.spanned;
 
             let component_name = component_name.as_ref().unwrap_or(&ident);
             let id = form_id.iter();
             let class = form_class.iter();
+            let style = form_style.iter();
             let submit = submit.iter();
             let field_changed_class = field_changed_class.iter();
 
@@ -661,7 +686,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                             Ok::<_, Error>(quote!(#url))
                         })?;
 
-                        quote!(<Form action=#url #(id=#id)* #(class=#class)* on:submit=move |ev| {
+                        quote!(<Form action=#url #(id=#id)* #(class=#class)* #(attr:style=#style)* on:submit=move |ev| {
                             use #wasm_bindgen_krate::UnwrapThrowExt;
                             ev.prevent_default();
                             let #data_ident = match #props_signal_ident.with(|props| <#component_ty as #leptos_form_krate::FormField<#leptos_krate::View>>::try_from_signal(props.signal, &config)) {
@@ -680,7 +705,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 Action::Url(url) => (
                     quote!(use #leptos_router_krate::Form;),
                     None,
-                    quote!(<Form action=#url #(id=#id)* #(class=#class)*>),
+                    quote!(<Form action=#url #(id=#id)* #(class=#class)* #(attr:style=#style)*>),
                     quote!(</Form>),
                     quote!(""),
                 ),
@@ -949,19 +974,21 @@ fn render_error(
         (EH::None, EH::Default) => quote!(#leptos_krate::View::default()),
         (EH::Default, EH::Default) => quote!(#leptos_krate::view! { <span style="color: red;">{#error_ident}</span> }),
         (EH::Component(component), EH::Default) => quote!(#leptos_krate::view! { <#component error=#error_ident /> }),
-        (EH::Container(Container { tag, id, class }), EH::Default) => {
+        (EH::Container(Container { tag, id, class, style }), EH::Default) => {
             let id = id.iter();
             let class = class.iter();
-            quote!(#leptos_krate::view! { <#tag #(id=#id)* #(class=#class)*>{#error_ident}</#tag> })
+            let style = style.iter();
+            quote!(#leptos_krate::view! { <#tag #(id=#id)* #(class=#class)* #(style=#style)*>{#error_ident}</#tag> })
         }
         (EH::Raw, EH::Default) => quote!({#error_ident}),
         (_, EH::None) => quote!(#leptos_krate::View::default()),
         (_, EH::Default) => quote!(#leptos_krate::view! { <span style="color: red;">{#error_ident}</span> }),
         (_, EH::Component(component)) => quote!(#leptos_krate::view! { <#component error=#error_ident /> }),
-        (_, EH::Container(Container { tag, id, class })) => {
+        (_, EH::Container(Container { tag, id, class, style })) => {
             let id = id.iter();
             let class = class.iter();
-            quote!(#leptos_krate::view! { <#tag #(id=#id)* #(class=#class)*>{#error_ident}</#tag> })
+            let style = style.iter();
+            quote!(#leptos_krate::view! { <#tag #(id=#id)* #(class=#class)* #(style=#style)*>{#error_ident}</#tag> })
         }
         (_, EH::Raw) => quote!({#error_ident}),
     })
@@ -978,122 +1005,167 @@ fn wrap_field(
     let field_view = quote!({#field_view_ident});
     let error_view = quote!({#error_view_ident});
     let field = spanned.deref();
-    let (container, id, class, rename_all, value) =
-        match (field.label.as_ref().unwrap_or(&FieldLabel::Default), form_label) {
-            (FieldLabel::None, _) => return Ok(quote!(#field_view #error_view)),
-            (FieldLabel::Default, FormLabel::None) => return Ok(quote!(#field_view #error_view)),
-            (FieldLabel::Default, FormLabel::Default) => (None, None, None, None, None),
-            (
-                FieldLabel::Default,
-                FormLabel::Adjacent {
-                    container,
-                    id,
-                    class,
-                    rename_all,
-                },
-            ) => (Some(container), id.as_ref(), class.as_ref(), rename_all.as_ref(), None),
-            (FieldLabel::Default, FormLabel::Wrap { id, class, rename_all }) => {
-                (None, id.as_ref(), class.as_ref(), rename_all.as_ref(), None)
+    let field_label = field.label.as_ref().unwrap_or(&FieldLabel::Default);
+    let (container, id, class, rename_all, style, value) = match (field_label, form_label) {
+        (FieldLabel::None, _) => return Ok(quote!(#field_view #error_view)),
+        (FieldLabel::Default, FormLabel::None) => return Ok(quote!(#field_view #error_view)),
+        (FieldLabel::Default, FormLabel::Default) => (None, None, None, None, None, None),
+        (
+            FieldLabel::Default,
+            FormLabel::Adjacent {
+                container,
+                id,
+                class,
+                rename_all,
+                style,
+            },
+        ) => (
+            Some(container.clone()),
+            id.as_ref(),
+            class.as_ref(),
+            rename_all.as_ref(),
+            style.as_ref(),
+            None,
+        ),
+        (
+            FieldLabel::Default,
+            FormLabel::Wrap {
+                id,
+                class,
+                rename_all,
+                style,
+            },
+        ) => (
+            None,
+            id.as_ref(),
+            class.as_ref(),
+            rename_all.as_ref(),
+            style.as_ref(),
+            None,
+        ),
+        (
+            FieldLabel::Adjacent {
+                container,
+                id,
+                class,
+                style,
+                value,
+            },
+            FormLabel::Adjacent {
+                container: container_form,
+                id: id_form,
+                class: class_form,
+                rename_all,
+                style: style_form,
+            },
+        ) => (
+            FieldLabelContainer::merge(container.as_ref(), Some(container_form))?,
+            id.as_ref().or(id_form.as_ref()),
+            class.as_ref().or(class_form.as_ref()),
+            if value.is_none() { rename_all.as_ref() } else { None },
+            style.as_ref().or(style_form.as_ref()),
+            value.as_ref(),
+        ),
+        (
+            FieldLabel::Adjacent {
+                container: field_label_container,
+                id,
+                class,
+                style,
+                value,
+            },
+            FormLabel::Wrap {
+                id: id_form,
+                class: class_form,
+                rename_all,
+                style: style_form,
+            },
+        ) => (
+            field_label_container.clone().map(Container::try_from).transpose()?,
+            id.as_ref().or(id_form.as_ref()),
+            class.as_ref().or(class_form.as_ref()),
+            if value.is_none() { rename_all.as_ref() } else { None },
+            style.as_ref().or(style_form.as_ref()),
+            value.as_ref(),
+        ),
+        (
+            FieldLabel::Adjacent {
+                container: field_label_container,
+                id,
+                class,
+                style,
+                value,
+            },
+            FormLabel::Default,
+        )
+        | (
+            FieldLabel::Adjacent {
+                container: field_label_container,
+                id,
+                class,
+                style,
+                value,
+            },
+            FormLabel::None,
+        ) => (
+            field_label_container.clone().map(Container::try_from).transpose()?,
+            id.as_ref(),
+            class.as_ref(),
+            None,
+            style.as_ref(),
+            value.as_ref(),
+        ),
+        (
+            FieldLabel::Wrap {
+                id,
+                class,
+                style,
+                value,
+            },
+            FormLabel::Adjacent {
+                id: id_form,
+                class: class_form,
+                rename_all,
+                style: style_form,
+                ..
             }
-            (
-                FieldLabel::Adjacent {
-                    container,
-                    id,
-                    class,
-                    value,
-                },
-                FormLabel::Adjacent {
-                    container: container_form,
-                    id: id_form,
-                    class: class_form,
-                    rename_all,
-                },
-            ) => (
-                Some(container.as_ref().unwrap_or(container_form)),
-                id.as_ref().or(id_form.as_ref()),
-                class.as_ref().or(class_form.as_ref()),
-                if value.is_none() { rename_all.as_ref() } else { None },
-                value.as_ref(),
-            ),
-            (
-                FieldLabel::Adjacent {
-                    container,
-                    id,
-                    class,
-                    value,
-                },
-                FormLabel::Wrap {
-                    id: id_form,
-                    class: class_form,
-                    rename_all,
-                },
-            ) => (
-                Some(
-                    container
-                        .as_ref()
-                        .ok_or_else(|| Error::new(spanned.span(), "a container tag must be specified"))?,
-                ),
-                id.as_ref().or(id_form.as_ref()),
-                class.as_ref().or(class_form.as_ref()),
-                if value.is_none() { rename_all.as_ref() } else { None },
-                value.as_ref(),
-            ),
-            (
-                FieldLabel::Adjacent {
-                    container,
-                    id,
-                    class,
-                    value,
-                },
-                FormLabel::Default,
-            )
-            | (
-                FieldLabel::Adjacent {
-                    container,
-                    id,
-                    class,
-                    value,
-                },
-                FormLabel::None,
-            ) => (
-                Some(
-                    container
-                        .as_ref()
-                        .ok_or_else(|| Error::new(spanned.span(), "a container tag must be specified"))?,
-                ),
-                id.as_ref(),
-                class.as_ref(),
-                None,
-                value.as_ref(),
-            ),
-            (
-                FieldLabel::Wrap { id, class, value },
-                FormLabel::Adjacent {
-                    id: id_form,
-                    class: class_form,
-                    rename_all,
-                    ..
-                }
-                | FormLabel::Wrap {
-                    id: id_form,
-                    class: class_form,
-                    rename_all,
-                },
-            ) => (
-                None,
-                id.as_ref().or(id_form.as_ref()),
-                class.as_ref().or(class_form.as_ref()),
-                if value.is_none() { rename_all.as_ref() } else { None },
-                value.as_ref(),
-            ),
-            (FieldLabel::Wrap { id, class, value }, FormLabel::Default)
-            | (FieldLabel::Wrap { id, class, value }, FormLabel::None) => {
-                (None, id.as_ref(), class.as_ref(), None, value.as_ref())
-            }
-        };
+            | FormLabel::Wrap {
+                id: id_form,
+                class: class_form,
+                style: style_form,
+                rename_all,
+            },
+        ) => (
+            None,
+            id.as_ref().or(id_form.as_ref()),
+            class.as_ref().or(class_form.as_ref()),
+            if value.is_none() { rename_all.as_ref() } else { None },
+            style.as_ref().or(style_form.as_ref()),
+            value.as_ref(),
+        ),
+        (
+            FieldLabel::Wrap {
+                id,
+                class,
+                style,
+                value,
+            },
+            FormLabel::Default,
+        )
+        | (
+            FieldLabel::Wrap {
+                id,
+                class,
+                style,
+                value,
+            },
+            FormLabel::None,
+        ) => (None, id.as_ref(), class.as_ref(), None, style.as_ref(), value.as_ref()),
+    };
 
     let label_id = id.into_iter();
     let label_class = class.into_iter();
+    let label_style = style.into_iter();
 
     let label = match value {
         Some(value) => value.value(),
@@ -1115,9 +1187,10 @@ fn wrap_field(
             let tag = &container.tag;
             let container_id = container.id.as_ref().into_iter();
             let container_class = container.class.as_ref().into_iter();
+            let container_style = container.style.as_ref().into_iter();
             quote!(
-                <#tag #(id=#container_id)* #(class=#container_class)*>
-                    <label for={#field_id_ident} #(id=#label_id)* #(class=#label_class)*>
+                <#tag #(id=#container_id)* #(class=#container_class)* #(style=#container_style)*>
+                    <label for={#field_id_ident} #(id=#label_id)* #(class=#label_class)* #(style=#label_style)*>
                         #label
                     </label>
                     #field_view
@@ -1126,7 +1199,7 @@ fn wrap_field(
             )
         }
         None => quote!(
-            <label for={#field_id_ident} #(id=#label_id)* #(class=#label_class)*>
+            <label for={#field_id_ident} #(id=#label_id)* #(class=#label_class)* #(style=#label_style)*>
                 <div>#label</div>
                 #field_view
                 #error_view
@@ -1149,6 +1222,47 @@ impl From<LabelCase> for Case {
             LabelCase::UpperKebab => Self::UpperKebab,
             LabelCase::UpperSnake => Self::UpperSnake,
         }
+    }
+}
+
+impl From<Container> for FieldLabelContainer {
+    fn from(value: Container) -> Self {
+        Self {
+            tag: Some(value.tag),
+            id: value.id,
+            class: value.class,
+            style: value.style,
+        }
+    }
+}
+
+impl TryFrom<FieldLabelContainer> for Container {
+    type Error = Error;
+    fn try_from(value: FieldLabelContainer) -> Result<Self, Self::Error> {
+        Ok(Self {
+            tag: value
+                .tag
+                .ok_or_else(|| Error::new(Span::call_site(), "field label container must specify tag"))?,
+            id: value.id,
+            class: value.class,
+            style: value.style,
+        })
+    }
+}
+
+impl FieldLabelContainer {
+    fn merge(field: Option<&Self>, form: Option<&Container>) -> Result<Option<Container>, Error> {
+        Ok(match (field.cloned(), form.cloned()) {
+            (Some(field), Some(form)) => Some(Container {
+                tag: field.tag.unwrap_or(form.tag),
+                id: field.id.or(form.id),
+                class: field.class.or(form.class),
+                style: field.style.or(form.style),
+            }),
+            (Some(field), None) => Some(Container::try_from(field)?),
+            (None, Some(form)) => Some(form),
+            (None, None) => None,
+        })
     }
 }
 

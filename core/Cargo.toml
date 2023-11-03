@@ -17,6 +17,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 derivative.workspace = true
 derive_more.workspace = true
+indexmap.workspace = true
 leptos.workspace = true
 paste.workspace = true
 thiserror.workspace = true

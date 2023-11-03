@@ -45,12 +45,9 @@ macro_rules! str_impl {
                 view! {
                     <[<$el:lower>]
                         type="text"
+                        class={class}
                         id={props.id.unwrap_or_else(|| props.name.clone())}
                         name={props.name}
-                        class={class}
-                        prop:class={move || class.with(|x| x.as_ref().map(|x| JsValue::from_str(&*x)))}
-                        value=move || props.signal.get().value
-                        prop:value={props.signal.0}
                         on:input=move |ev| props.signal.0.update(|x| x.value = event_target_value(&ev))
                         on:change=move |_| {
                             if let Err(form_error) = <Self as FormField<HtmlElement<Input>>>::try_from_signal(props.signal, &props.config) {
@@ -59,6 +56,10 @@ macro_rules! str_impl {
                                 props.signal.update(|x| x.error = None);
                             }
                         }
+                        prop:class={move || class.with(|x| x.as_ref().map(|x| JsValue::from_str(&*x)))}
+                        prop:value={props.signal.0}
+                        style={props.style}
+                        value=move || props.signal.get().value
                     />
                 }
             }
