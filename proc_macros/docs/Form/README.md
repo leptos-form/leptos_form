@@ -360,10 +360,10 @@ mod blog_post {
 ```
 
 ##### Create blog post UI - Filling out form
-![Create blog post UI - Filling out form](https://github.com/tlowerison/leptos_form/blob/main/proc_macros/docs/Form/example1_create1.png)
+![Create blog post UI - Filling out form](https://raw.githubusercontent.com/tlowerison/leptos_form/main/proc_macros/docs/Form/example1_create1.png)
 
 ##### Create blog post UI - Submitted
-![Create blog post UI - Submitted](https://github.com/tlowerison/leptos_form/blob/main/proc_macros/docs/Form/example1_create2.png)
+![Create blog post UI - Submitted](https://raw.githubusercontent.com/tlowerison/leptos_form/main/proc_macros/docs/Form/example1_create2.png)
 
 ##### Update blog post UI - Filling out form
-![Update blog post UI - Filling out form](https://github.com/tlowerison/leptos_form/blob/main/proc_macros/docs/Form/example1_update1.png)
+![Update blog post UI - Filling out form](https://raw.githubusercontent.com/tlowerison/leptos_form/main/proc_macros/docs/Form/example1_update1.png)
