@@ -31,7 +31,7 @@ struct FormOpts {
     field_style: Option<syn::LitStr>,
     form_props: Option<syn::Meta>,
     groups: Option<Groups>,
-    internal: Option<bool>,
+    internal: Option<SpannedValue<bool>>,
     id: Option<syn::LitStr>,
     island: Option<ComponentConfigSpanned>,
     label: Option<FormLabel>,
@@ -243,7 +243,12 @@ impl FromMeta for Action {
         let parse_fn_call = |expr_call: &syn::ExprCall| -> Result<(syn::Path, syn::Ident), Error> {
             let server_fn_path = match &*expr_call.func {
                 syn::Expr::Path(expr_path) => expr_path.path.clone(),
-                _ => return Err(Error::unexpected_expr_type(&expr_call.func)),
+                _ => {
+                    return Err(
+                        Error::custom("action server function must use a path (i.e. cannot be a closure)")
+                            .with_span(&expr_call.func.span()),
+                    )
+                }
             };
             let first_arg = expr_call.args.first().ok_or_else(|| {
                 Error::custom("expected an argument to the function call").with_span(&expr_call.args.span())
@@ -327,7 +332,7 @@ impl FromMeta for Element {
             }
             syn::Meta::NameValue(_) => {
                 return Err(darling::Error::custom(
-                    "missing el type, specify using parentheses like `el(leptos::html::HtmlElement<..>)`",
+                    "el must be specified using parentheses like `el(leptos::html::HtmlElement<..>)`",
                 )
                 .with_span(&meta.span()))
             }
@@ -366,6 +371,7 @@ impl FromMeta for MapSubmit {
 
 pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
     let ast: syn::DeriveInput = parse2(tokens)?;
+
     let form_opts = FormOpts::from_derive_input(&ast)?;
     let FormOpts {
         component,
@@ -392,7 +398,6 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
     let mod_ident = format_ident!("{}", format!("leptos_form_component_{ident}").to_case(Case::Snake));
 
     let form_label = form_label.unwrap_or_default();
-    let is_internal = internal.unwrap_or_default();
 
     let component_ident = if component.is_some() {
         Some(format_ident!("component"))
@@ -401,6 +406,14 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
     } else {
         None
     };
+
+    let krate = std::env::var("CARGO_PKG_NAME").unwrap();
+    if let Some(internal) = internal.as_ref() {
+        if krate != "leptos_form" && krate != "leptos_form_proc_macros_core" {
+            return Err(Error::new(internal.span(), "unknown attribute `internal`"));
+        }
+    }
+    let is_internal = internal.map(|x| *x).unwrap_or_default();
 
     let leptos_form_krate: syn::Path = parse2(match is_internal {
         true => quote!(crate),
@@ -455,16 +468,16 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             };
 
             let field_signal_ty: syn::Type =
-                parse2(quote!(<#field_ty as #leptos_form_krate::FormField<#field_el_ty>>::Signal))?;
+                parse2(quote!(<#field_ty as #leptos_form_krate::FormField<#field_el_ty>>::Signal)).unwrap();
             let field_config_ty: syn::Type =
-                parse2(quote!(<#field_ty as #leptos_form_krate::FormField<#field_el_ty>>::Config))?;
+                parse2(quote!(<#field_ty as #leptos_form_krate::FormField<#field_el_ty>>::Config)).unwrap();
 
             let (signal_field, config_field) = (
                 create_field(field.ident.clone(), field_signal_ty),
                 create_field(field.ident.clone(), field_config_ty),
             );
 
-            Ok((
+            (
                 field.group,
                 field_ax,
                 field_ty,
@@ -472,10 +485,8 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 config,
                 signal_field,
                 config_field,
-            ))
+            )
         })
-        .collect::<Result<Vec<_>, Error>>()?
-        .into_iter()
         .multiunzip();
 
     let tuple_err_fields = fields.iter().map(|_| quote!(pub Option<#leptos_form_krate::FormError>));
@@ -846,7 +857,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 named: signal_fields,
                 brace_token: Default::default(),
             }),
-            Style::Unit => syn::Fields::Unit,
+            Style::Unit => unreachable!(),
         },
         // TODO: define generics on signal struct if supported in the future
         generics: Default::default(),
@@ -872,7 +883,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 named: config_fields,
                 brace_token: Default::default(),
             }),
-            Style::Unit => syn::Fields::Unit,
+            Style::Unit => unreachable!(),
         },
         // TODO: define generics on signal struct if supported in the future
         generics: Default::default(),
@@ -1291,6 +1302,16 @@ mod test {
         }
     }
 
+    fn cleanup(tokens: &TokenStream) -> String {
+        let tokens = tokens.to_string();
+        tokens.replace("< <", "<<").replace("> >", ">>")
+    }
+
+    fn pretty(cleaned_up: String) -> Result<String, Error> {
+        let syntax_tree = syn::parse_file(&cleaned_up)?;
+        Ok(prettyplease::unparse(&syntax_tree))
+    }
+
     #[test]
     fn form_cannot_be_derived_on_unit_structs() {
         let input = quote!(
@@ -1421,6 +1442,22 @@ mod test {
         let err = expect_err(derive_form(input));
 
         assert_eq!("only idents are supported here", format!("{err}"));
+
+        // test that the func in an action function must be a syn::Path
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = (|data| data)(my_data)))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!(
+            "action server function must use a path (i.e. cannot be a closure)",
+            format!("{err}")
+        );
     }
 
     #[test]
@@ -1534,16 +1571,17 @@ mod test {
         let input = quote!(
             #[derive(Form)]
             pub struct MyFormData {
-                #[form(el = ::leptos::HtmlElement<::leptos::html::Input>)]
+                #[form(el = MyElement)]
                 pub id: Uuid,
             }
         );
 
         let err = expect_err(derive_form(input));
 
-        // less than ideal error message but cannot control that darling attempts to parse the `el = TokenStream` and fails
-        // prior to calling from_meta
-        assert_eq!("unexpected end of input, expected an expression", format!("{err}"));
+        assert_eq!(
+            "el must be specified using parentheses like `el(leptos::html::HtmlElement<..>)`",
+            format!("{err}")
+        );
     }
 
     #[test]
@@ -1601,6 +1639,82 @@ mod test {
             pub struct MyFormData {
                 pub id: Uuid,
             }
+        );
+
+        derive_form(input)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn field_group_out_of_range_is_rejected() {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(groups(container(tag = "div")))]
+            pub struct MyFormData {
+                #[form(group = 0)]
+                pub id: Uuid,
+                #[form(group = 2)]
+                pub name: Uuid,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!("group index out of range", format!("{err}"));
+    }
+
+    #[test]
+    fn tuple_component_unnamed_is_rejected() {
+        let expected_err_msg = r#"deriving Form for a tuple struct with `component` specified additionally requires a component name, consider using `component(name = "MyFormData_")`; note that "MyFormData" cannot be used as the component name because MyFormData is already an item defined in the function namespace and "_MyFormData" should not be used because of leptos name transformations"#;
+
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = "foo"))]
+            pub struct MyFormData(Uuid);
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!(expected_err_msg, format!("{err}"));
+    }
+
+    #[test]
+    fn tuple_component_same_name_is_rejected() {
+        let expected_err_msg = r#"deriving Form for a tuple struct with `component` specified additionally requires a component name, consider using `component(name = "MyFormData_")`; note that "MyFormData" cannot be used as the component name because MyFormData is already an item defined in the function namespace and "_MyFormData" should not be used because of leptos name transformations"#;
+
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = "foo", name = MyFormData))]
+            pub struct MyFormData(Uuid);
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!(expected_err_msg, format!("{err}"));
+    }
+
+    #[test]
+    fn tuple_component_same_name_preceded_with_underscore_is_rejected() {
+        let expected_err_msg = r#"deriving Form for a tuple struct with `component` specified additionally requires a component name, consider using `component(name = "MyFormData_")`; note that "MyFormData" cannot be used as the component name because MyFormData is already an item defined in the function namespace and "_MyFormData" should not be used because of leptos name transformations"#;
+
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = "foo", name = _MyFormData))]
+            pub struct MyFormData(Uuid);
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!(expected_err_msg, format!("{err}"));
+    }
+
+    #[test]
+    fn tuple_component_name_valid() -> Result<(), Error> {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = "foo", name = Test))]
+            pub struct MyFormData(Uuid);
         );
 
         derive_form(input)?;
@@ -2187,6 +2301,7 @@ mod test {
     fn island_is_produced_correctly() -> Result<(), Error> {
         let input = quote!(
             #[derive(Form)]
+            #[form(internal)]
             #[form(island(
                 action = my_server_fn(my_form_data),
                 map_submit = my_map_submit,
@@ -2214,9 +2329,10 @@ mod test {
             }
         );
 
-        let leptos_krate = quote!(::leptos_form::internal::leptos);
-        let leptos_router_krate = quote!(::leptos_form::internal::leptos_router);
-        let leptos_form_krate = quote!(::leptos_form);
+        // use internal for this test
+        let leptos_krate = quote!(crate::internal::leptos);
+        let leptos_router_krate = quote!(crate::internal::leptos_router);
+        let leptos_form_krate = quote!(crate);
 
         let expected = quote!(
             #[derive(Clone, Copy, Debug)]
@@ -2366,7 +2482,7 @@ mod test {
                         <Form
                             action="/api/my_server_fn"
                             on:submit=move |ev| {
-                                use ::leptos_form::internal::wasm_bindgen::UnwrapThrowExt;
+                                use crate::internal::wasm_bindgen::UnwrapThrowExt;
                                 ev.prevent_default();
                                 let data = match signal.with(|props| <MyFormData as #leptos_form_krate::FormField<#leptos_krate::View>>::try_from_signal(props.signal, &config)) {
                                     Ok(parsed) => parsed,
@@ -2399,15 +2515,5 @@ mod test {
         assert_eq!(expected, output);
 
         Ok(())
-    }
-
-    pub fn cleanup(tokens: &TokenStream) -> String {
-        let tokens = tokens.to_string();
-        tokens.replace("< <", "<<").replace("> >", ">>")
-    }
-
-    pub fn pretty(cleaned_up: String) -> Result<String, Error> {
-        let syntax_tree = syn::parse_file(&cleaned_up)?;
-        Ok(prettyplease::unparse(&syntax_tree))
     }
 }
