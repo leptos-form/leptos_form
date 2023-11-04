@@ -208,7 +208,7 @@ mod blog_post {
         #[form(group = 0)]
         pub slug: String,
         #[builder(default)]
-        #[form(group = 0, style = "color: white !important;", label(adjacent(container(style = "color: green !important;"))))]
+        #[form(group = 0)]
         pub title: String,
         #[builder(default)]
         #[form(group = 1)]
@@ -224,6 +224,45 @@ mod blog_post {
             label(adjacent(container(tag = "div", class="w-full px-3"))),
         )]
         pub content: String,
+    }
+
+    #[component]
+    pub fn BlogPostCreate() -> impl IntoView {
+        let id = Uuid::new_v4();
+        let initial = BlogPost::builder().id(id).slug(id.to_string()).build();
+
+        view! {
+            <div class="w-full flex flex-row items-center justify-center">
+                <BlogPost initial={initial.clone()} />
+            </div>
+        }
+    }
+
+    #[server]
+    async fn create_blog_post(data: BlogPost) -> Result<DbBlogPost, ServerFnError> { todo!() }
+
+    /// configures how items in the `tags` field appear in the form
+    fn vec_config<C: Default>() -> VecConfig<C> {
+        VecConfig::builder()
+            .item_label(VecItemLabel::builder()
+                .class("flex flex-row items-center space-x-2")
+                .notation(VecItemLabelNotation::Number)
+                .build())
+            .size(VecConfigSize::Bounded { min: Some(1), max: None })
+            .remove(Adornment::Spec(AdornmentSpec::builder()
+                .class("ml-2 text-white")
+                .build()))
+            .build()
+    }
+
+
+    // -------- UPDATE UI ------------
+
+
+    /// url params used in update form
+    #[derive(Clone, Debug, Default, Eq, Params, PartialEq)]
+    pub struct BlogPostParams {
+        pub slug: Option<String>,
     }
 
     /// Form struct which contains the data we want to submit to our backend
@@ -256,53 +295,15 @@ mod blog_post {
             action = update_blog_post(data),
             class = "w-full max-w-lg",
             field_changed_class = "border border-1 border-green-500 focus:border-green-500",
-            // map_submit accepts any valid expression which implements `MapSubmit`
-            map_submit = |FormDiff { initial, current }: FormDiff<BlogPostPatchForm>| {
-                BlogPostPatch::builder()
-                    .id(initial.0.id)
-                    .slug((initial.0.slug != current.0.slug).then_some(current.0.slug))
-                    .title((initial.0.title != current.0.title).then_some(current.0.title))
-                    .summary((initial.0.summary != current.0.summary).then_some(current.0.summary))
-                    .tags((initial.0.tags != current.0.tags).then_some(current.0.tags))
-                    .content((initial.0.content != current.0.content).then_some(current.0.content))
-                    .build()
-            },
+            // map_submit accepts any valid expression which implements `MapSubmit`a
+            // see map_blog_patch_submit further down
+            map_submit = map_blog_patch_submit,
             name = BlogPostPatchForm_,
             on_success = |_, _| (view! { <div>{move || "Updated blog post."}</div> }.into_view()),
             submit = view! { <input class="cursor-pointer border border-1 rounded px-2 py-1" type="submit" value="Update" />},
         ),
     )]
     pub struct BlogPostPatchForm(#[form(label = "none")] pub BlogPost);
-
-    #[derive(Clone, Debug, Default, Eq, Params, PartialEq)]
-    pub struct BlogPostParams {
-        pub slug: Option<String>,
-    }
-
-    impl From<DbBlogPost> for BlogPostPatchForm {
-        fn from(value: DbBlogPost) -> Self {
-            Self(BlogPost::builder()
-                .id(value.id)
-                .slug(value.slug)
-                .title(value.title)
-                .summary(value.summary)
-                .content(value.content)
-                .tags(value.tags)
-                .build())
-        }
-    }
-
-    #[component]
-    pub fn BlogPostCreate() -> impl IntoView {
-        let id = Uuid::new_v4();
-        let initial = BlogPost::builder().id(id).slug(id.to_string()).build();
-
-        view! {
-            <div class="w-full flex flex-row items-center justify-center">
-                <BlogPost initial={initial.clone()} />
-            </div>
-        }
-    }
 
     #[component]
     pub fn BlogPostUpdate() -> impl IntoView {
@@ -335,26 +336,33 @@ mod blog_post {
     }
 
     #[server]
-    async fn create_blog_post(data: BlogPost) -> Result<DbBlogPost, ServerFnError> { todo!() }
-
-    #[server]
     async fn get_blog_post_by_slug(slug: String) -> Result<DbBlogPost, ServerFnError> { todo!() }
 
     #[server]
     async fn update_blog_post(data: BlogPostPatch) -> Result<DbBlogPost, ServerFnError> { todo!() }
 
-    /// configures how items in the `tags` field appear in the form
-    fn vec_config<C: Default>() -> VecConfig<C> {
-        VecConfig::builder()
-            .item_label(VecItemLabel::builder()
-                .class("flex flex-row items-center space-x-2")
-                .notation(VecItemLabelNotation::Number)
-                .build())
-            .size(VecConfigSize::Bounded { min: Some(1), max: None })
-            .remove(Adornment::Spec(AdornmentSpec::builder()
-                .class("ml-2 text-white")
-                .build()))
+    fn map_blog_patch_submit(FormDiff { initial, current }: FormDiff<BlogPostPatchForm>) -> BlogPostPatch {
+        BlogPostPatch::builder()
+            .id(initial.0.id)
+            .slug((initial.0.slug != current.0.slug).then_some(current.0.slug))
+            .title((initial.0.title != current.0.title).then_some(current.0.title))
+            .summary((initial.0.summary != current.0.summary).then_some(current.0.summary))
+            .tags((initial.0.tags != current.0.tags).then_some(current.0.tags))
+            .content((initial.0.content != current.0.content).then_some(current.0.content))
             .build()
+    }
+
+    impl From<DbBlogPost> for BlogPostPatchForm {
+        fn from(value: DbBlogPost) -> Self {
+            Self(BlogPost::builder()
+                .id(value.id)
+                .slug(value.slug)
+                .title(value.title)
+                .summary(value.summary)
+                .content(value.content)
+                .tags(value.tags)
+                .build())
+        }
     }
 }
 ```
