@@ -18,7 +18,7 @@ jobs:
 
     # TODO: change to dtolnay/rust-toolchain@stable once 1.75.0 lands on stable
     - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@nightly
+      uses: dtolnay/rust-toolchain@1.75.0
       with:
         components: clippy,rustfmt
 
@@ -40,6 +40,13 @@ jobs:
     - run: pip install pre-commit
 
     - uses: actions/checkout@v4
+
+    - name: Set environment variables to be used during cargo test phase (will generate codecov report bindings)
+      run: |
+        echo $'CARGO_INCREMENTAL="0"
+        RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"
+        RUSTDOCFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"' \
+        > .cargo-test.env
 
     - run: pre-commit run --all-files --hook-stage push
 
