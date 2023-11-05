@@ -1,18 +1,16 @@
-#![allow(unused)]
-
 use ::convert_case::*;
 use ::darling::{
     ast::{NestedMeta, Style},
-    util::{Flag, SpannedValue},
+    util::SpannedValue,
     FromDeriveInput, FromField, FromMeta,
 };
 use ::derive_more::*;
 use ::itertools::Itertools;
 use ::proc_macro2::{Span, TokenStream};
-use ::quote::{format_ident, quote, ToTokens, TokenStreamExt};
+use ::quote::{format_ident, quote, ToTokens};
 use ::std::borrow::Cow;
 use ::std::ops::Deref;
-use ::syn::parse::{Error, Parse, ParseStream};
+use ::syn::parse::Error;
 use ::syn::punctuated::Punctuated;
 use ::syn::spanned::Spanned;
 use ::syn::{parse2, parse_str};
@@ -27,14 +25,14 @@ use ::syn::{parse2, parse_str};
 struct FormOpts {
     component: Option<ComponentConfigSpanned>,
     error: Option<SpannedValue<ErrorHandler>>,
-    field_class: Option<syn::LitStr>,
-    field_style: Option<syn::LitStr>,
-    form_props: Option<syn::Meta>,
+    field_class: Option<StringExpr>,
+    field_style: Option<StringExpr>,
     groups: Option<Groups>,
     internal: Option<SpannedValue<bool>>,
-    id: Option<syn::LitStr>,
+    id: Option<StringExpr>,
     island: Option<ComponentConfigSpanned>,
     label: Option<FormLabel>,
+    wrapper: Option<bool>,
     // forwarded fields
     vis: syn::Visibility,
     ident: syn::Ident,
@@ -60,15 +58,15 @@ struct ComponentConfigSpanned {
 #[derive(Clone, Debug, Default, FromMeta)]
 struct ComponentConfig {
     action: Option<Action>,
-    class: Option<syn::LitStr>,
-    field_changed_class: Option<syn::LitStr>,
+    class: Option<StringExpr>,
+    field_changed_class: Option<StringExpr>,
     map_submit: Option<MapSubmit>,
     name: Option<syn::Ident>,
     on_error: Option<syn::Expr>,
     on_success: Option<syn::Expr>,
     reset_on_success: Option<bool>,
     submit: Option<syn::Expr>,
-    style: Option<syn::LitStr>,
+    style: Option<StringExpr>,
 }
 
 #[derive(Clone, Debug, Default, FromMeta, IsVariant)]
@@ -81,17 +79,17 @@ enum FormLabel {
     #[darling(rename = "adjacent")]
     Adjacent {
         container: Container,
-        id: Option<syn::LitStr>,
-        class: Option<syn::LitStr>,
+        id: Option<StringExpr>,
+        class: Option<StringExpr>,
         rename_all: Option<LabelCase>,
-        style: Option<syn::LitStr>,
+        style: Option<StringExpr>,
     },
     #[darling(rename = "wrap")]
     Wrap {
-        id: Option<syn::LitStr>,
-        class: Option<syn::LitStr>,
+        id: Option<StringExpr>,
+        class: Option<StringExpr>,
         rename_all: Option<LabelCase>,
-        style: Option<syn::LitStr>,
+        style: Option<StringExpr>,
     },
 }
 
@@ -111,17 +109,17 @@ enum ErrorHandler {
 #[derive(Clone, Debug, FromMeta)]
 struct Container {
     tag: syn::Ident,
-    id: Option<syn::LitStr>,
-    class: Option<syn::LitStr>,
-    style: Option<syn::LitStr>,
+    id: Option<StringExpr>,
+    class: Option<StringExpr>,
+    style: Option<StringExpr>,
 }
 
 #[derive(Clone, Debug, FromMeta)]
 struct FieldLabelContainer {
     tag: Option<syn::Ident>,
-    id: Option<syn::LitStr>,
-    class: Option<syn::LitStr>,
-    style: Option<syn::LitStr>,
+    id: Option<StringExpr>,
+    class: Option<StringExpr>,
+    style: Option<StringExpr>,
 }
 
 #[derive(Clone, Debug, IsVariant)]
@@ -137,16 +135,15 @@ enum Action {
 #[derive(Clone, Debug, FromField)]
 #[darling(attributes(form))]
 struct FormField {
-    class: Option<syn::LitStr>,
+    class: Option<StringExpr>,
     config: Option<syn::Expr>,
     el: Option<Element>,
     error: Option<SpannedValue<ErrorHandler>>,
     group: Option<SpannedValue<usize>>,
-    id: Option<syn::LitStr>,
+    id: Option<StringExpr>,
     label: Option<FieldLabel>,
-    style: Option<syn::LitStr>,
+    style: Option<StringExpr>,
     // forwarded fields
-    vis: syn::Visibility,
     ident: Option<syn::Ident>,
     ty: syn::Type,
 }
@@ -159,9 +156,9 @@ enum FieldLabel {
     #[darling(rename = "adjacent")]
     Adjacent {
         container: Option<FieldLabelContainer>,
-        id: Option<syn::LitStr>,
-        class: Option<syn::LitStr>,
-        style: Option<syn::LitStr>,
+        id: Option<StringExpr>,
+        class: Option<StringExpr>,
+        style: Option<StringExpr>,
         value: Option<syn::LitStr>,
     },
     #[darling(rename = "default")]
@@ -171,9 +168,9 @@ enum FieldLabel {
     None,
     #[darling(rename = "wrap")]
     Wrap {
-        id: Option<syn::LitStr>,
-        class: Option<syn::LitStr>,
-        style: Option<syn::LitStr>,
+        id: Option<StringExpr>,
+        class: Option<StringExpr>,
+        style: Option<StringExpr>,
         value: Option<syn::LitStr>,
     },
 }
@@ -206,6 +203,46 @@ enum LabelCase {
     UpperKebab,
     #[darling(rename = "UPPER_SNAKE_CASE")]
     UpperSnake,
+}
+
+#[derive(Clone, Debug)]
+enum StringExpr {
+    Expr(syn::Expr),
+    LitStr(String),
+}
+
+impl FromMeta for StringExpr {
+    fn from_string(value: &str) -> Result<Self, darling::Error> {
+        Ok(Self::LitStr(value.to_string()))
+    }
+    fn from_expr(expr: &syn::Expr) -> Result<Self, darling::Error> {
+        Ok(Self::Expr(expr.clone()))
+    }
+}
+
+impl ToTokens for StringExpr {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            Self::Expr(expr) => tokens.extend(std::iter::once(quote!(#expr))),
+            Self::LitStr(lit_str) => tokens.extend(std::iter::once(quote!(#lit_str))),
+        }
+    }
+}
+
+impl StringExpr {
+    fn map_case(self, case: Case) -> Self {
+        match self {
+            Self::Expr(expr) => Self::Expr(expr),
+            Self::LitStr(lit_str) => Self::LitStr(lit_str.to_case(case)),
+        }
+    }
+
+    fn with_oco(leptos_krate: &syn::Path) -> impl Fn(StringExpr) -> TokenStream + '_ {
+        move |val| match val {
+            Self::Expr(expr) => quote!(#leptos_krate::Oco::Owned(#expr.to_string())),
+            Self::LitStr(lit_str) => quote!(#leptos_krate::Oco::Borrowed(#lit_str)),
+        }
+    }
 }
 
 impl ComponentConfigSpanned {
@@ -379,7 +416,6 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         error: form_error_handler,
         field_class,
         field_style,
-        form_props,
         groups,
         id: form_id,
         ident,
@@ -387,6 +423,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         island,
         label: form_label,
         vis,
+        wrapper,
     } = form_opts;
 
     let error_ident = format_ident!("error");
@@ -414,6 +451,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         }
     }
     let is_internal = internal.map(|x| *x).unwrap_or_default();
+    let is_wrapper = wrapper.unwrap_or_default();
 
     let leptos_form_krate: syn::Path = parse2(match is_internal {
         true => quote!(crate),
@@ -489,9 +527,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         })
         .multiunzip();
 
-    let tuple_err_fields = fields.iter().map(|_| quote!(pub Option<#leptos_form_krate::FormError>));
-
-    let (build_props, build_props_idents, field_id_idents, field_view_idents, error_view_idents): (Vec<_>, Vec<_>, Vec<_>, Vec<_>, Vec<_>) = fields
+    let (build_props, field_id_idents, field_view_idents, error_view_idents): (Vec<_>, Vec<_>, Vec<_>, Vec<_>) = fields
         .iter()
         .enumerate()
         .map(|(i, spanned)| {
@@ -499,9 +535,8 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             let field_ty = &field_tys[i];
             let field_el_ty = &field_el_tys[i];
 
-            let id = field.id.clone().map(|x| x.value());
-            let class = field.class.clone().or_else(|| field_class.clone()).into_iter();
-            let style = field.style.clone().or_else(|| field_style.clone()).into_iter();
+            let class = field.class.clone().or_else(|| field_class.clone()).map(StringExpr::with_oco(&leptos_krate)).into_iter();
+            let style = field.style.clone().or_else(|| field_style.clone()).map(StringExpr::with_oco(&leptos_krate)).into_iter();
 
             let config = field.config.clone() .unwrap_or_else(|| parse2(quote!(
                 <#field_ty as #leptos_form_krate::FormField<#field_el_ty>>::Config::default()
@@ -509,9 +544,11 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
             let field_ax = &field_axs[i];
             let field_name = field_ax.to_string();
-            let field_id = id.as_ref().unwrap_or(&field_name);
 
-            let field_id = if id.is_none() { field_id.to_case(Case::Kebab) } else { field_id.to_string() };
+            let field_id = (StringExpr::with_oco(&leptos_krate))(field.id
+                .clone()
+                .unwrap_or_else(|| StringExpr::LitStr(field_name.clone()))
+                .map_case(Case::Kebab));
 
             // TODO: implement serde derived name case conversion
 
@@ -530,21 +567,24 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 .map(|field_changed_class| quote!(#leptos_krate::Oco::Borrowed(#field_changed_class)))
                 .unwrap_or_else(|| quote!(#props_ident.field_changed_class.clone()));
 
+            let field_id_builder = match is_wrapper {
+                true => quote!(#props_ident.id),
+                false => quote!(#leptos_form_krate::format_form_id(#props_ident.id.as_ref(), #field_id)),
+            };
+            let field_name_builder = match is_wrapper {
+                true => quote!(#props_ident.name),
+                false => quote!(#leptos_form_krate::format_form_name(#props_ident.name.as_ref(), #field_name)),
+            };
+
             Ok((
                 quote!(
-                    let #field_id_ident = #leptos_form_krate::format_form_id(
-                        #props_ident.id.as_ref(),
-                        #field_id
-                    );
-                    let #field_name_ident = #leptos_form_krate::format_form_name(
-                        Some(&#props_ident.name),
-                        #field_name
-                    );
+                    let #field_id_ident = #field_id_builder;
+                    let #field_name_ident = #field_name_builder;
                     let #build_props_ident = #leptos_form_krate::RenderProps::builder()
                         .id(#field_id_ident.clone())
                         .name(#field_name_ident.clone())
-                        #(.class(#leptos_krate::Oco::Borrowed(#class)))*
-                        #(.style(#leptos_krate::Oco::Borrowed(#style)))*
+                        #(.class(#class))*
+                        #(.style(#style))*
                         .field_changed_class(#field_changed_class)
                         .signal(#props_ident.signal.#field_ax.clone())
                         .config(#config)
@@ -561,7 +601,6 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                     let ty = <::std::marker::PhantomData<(#field_ty, #field_el_ty)> as Default>::default();
                     let #field_view_ident = #leptos_krate::view! { <FormField props=#build_props_ident ty=ty /> };
                 ),
-                build_props_ident,
                 field_id_ident,
                 field_view_ident,
                 error_view_ident,
@@ -724,7 +763,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                         }>)
                     },
                     quote!(</Form>),
-                    { let arg = format!("{arg}"); quote!(#arg) },
+                    { let arg = format!("{arg}"); quote!(#leptos_krate::Oco::Borrowed(#arg)) },
                 ),
                 Action::Url(url) => (
                     quote!(use #leptos_router_krate::Form;),
@@ -969,16 +1008,6 @@ fn field_el_ty(leptos_form_krate: &syn::Path, field: &FormField) -> syn::Type {
         .unwrap_or_else(|| parse2(quote!(<#ty as #leptos_form_krate::DefaultHtmlElement>::El)).unwrap())
 }
 
-fn signal_field_ty(
-    leptos_krate: &syn::Path,
-    leptos_form_krate: &syn::Path,
-    field: &FormField,
-    el_ty: &syn::Type,
-) -> Result<syn::Type, Error> {
-    let ty = &field.ty;
-    parse2(quote!(<#ty as #leptos_form_krate::FormField<#el_ty>>::Signal))
-}
-
 fn render_error(
     leptos_krate: &syn::Path,
     form_error_handler: Option<&SpannedValue<ErrorHandler>>,
@@ -1006,7 +1035,6 @@ fn render_error(
         }
         (EH::Raw, EH::Default) => quote!({#error_ident}),
         (_, EH::None) => quote!(#leptos_krate::View::default()),
-        (_, EH::Default) => quote!(#leptos_krate::view! { <span style="color: red;">{#error_ident}</span> }),
         (_, EH::Component(component)) => quote!(#leptos_krate::view! { <#component error=#error_ident /> }),
         (_, EH::Container(Container { tag, id, class, style })) => {
             let id = id.iter();
@@ -1773,7 +1801,7 @@ mod test {
 
         let leptos_form_krate = quote!(::leptos_form);
         let leptos_krate = quote!(#leptos_form_krate::internal::leptos);
-        let wasm_bindgen_krate = quote!(#leptos_form_krate::internal::wasm_bindgen);
+        let _wasm_bindgen_krate = quote!(#leptos_form_krate::internal::wasm_bindgen);
 
         let expected = quote!(
             #[derive(Clone, Copy, Debug)]
@@ -1856,7 +1884,7 @@ mod test {
                     use #leptos_krate::{IntoAttribute, IntoView};
 
                     let _id_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "id");
-                    let _id_name = #leptos_form_krate::format_form_name(Some(&props.name), "id");
+                    let _id_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "id");
                     let _id_props = #leptos_form_krate::RenderProps::builder()
                         .id(_id_id.clone())
                         .name(_id_name.clone())
@@ -1879,7 +1907,7 @@ mod test {
                     let _id_view = #leptos_krate::view! { <FormField props=_id_props ty=ty /> };
 
                     let _slug_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "slug");
-                    let _slug_name = #leptos_form_krate::format_form_name(Some(&props.name), "slug");
+                    let _slug_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "slug");
                     let _slug_props = #leptos_form_krate::RenderProps::builder()
                         .id(_slug_id.clone())
                         .name(_slug_name.clone())
@@ -1902,7 +1930,7 @@ mod test {
                     let _slug_view = #leptos_krate::view! { <FormField props=_slug_props ty=ty /> };
 
                     let _created_at_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "created-at");
-                    let _created_at_name = #leptos_form_krate::format_form_name(Some(&props.name), "created_at");
+                    let _created_at_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "created_at");
                     let _created_at_props = #leptos_form_krate::RenderProps::builder()
                         .id(_created_at_id.clone())
                         .name(_created_at_name.clone())
@@ -1925,7 +1953,7 @@ mod test {
                     let _created_at_view = #leptos_krate::view! { <FormField props=_created_at_props ty=ty /> };
 
                     let _count_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "count");
-                    let _count_name = #leptos_form_krate::format_form_name(Some(&props.name), "count");
+                    let _count_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "count");
                     let _count_props = #leptos_form_krate::RenderProps::builder()
                         .id(_count_id.clone())
                         .name(_count_name.clone())
@@ -2069,7 +2097,7 @@ mod test {
                     use #leptos_krate::{IntoAttribute, IntoView};
 
                     let _abc_123_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "hello-there");
-                    let _abc_123_name = #leptos_form_krate::format_form_name(Some(&props.name), "abc_123");
+                    let _abc_123_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "abc_123");
                     let _abc_123_props = #leptos_form_krate::RenderProps::builder()
                         .id(_abc_123_id.clone())
                         .name(_abc_123_name.clone())
@@ -2093,7 +2121,7 @@ mod test {
                     let _abc_123_view = #leptos_krate::view! { <FormField props=_abc_123_props ty=ty /> };
 
                     let _zz_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "zz");
-                    let _zz_name = #leptos_form_krate::format_form_name(Some(&props.name), "zz");
+                    let _zz_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "zz");
                     let _zz_props = #leptos_form_krate::RenderProps::builder()
                         .id(_zz_id.clone())
                         .name(_zz_name.clone())
@@ -2216,7 +2244,7 @@ mod test {
                     use #leptos_krate::{IntoAttribute, IntoView};
 
                     let _ayo_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "ayo");
-                    let _ayo_name = #leptos_form_krate::format_form_name(Some(&props.name), "ayo");
+                    let _ayo_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "ayo");
                     let _ayo_props = #leptos_form_krate::RenderProps::builder()
                         .id(_ayo_id.clone())
                         .name(_ayo_name.clone())
@@ -2395,7 +2423,7 @@ mod test {
                     use #leptos_krate::{IntoAttribute, IntoView};
 
                     let _ayo_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "ayo");
-                    let _ayo_name = #leptos_form_krate::format_form_name(Some(&props.name), "ayo");
+                    let _ayo_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "ayo");
                     let _ayo_props = #leptos_form_krate::RenderProps::builder()
                         .id(_ayo_id.clone())
                         .name(_ayo_name.clone())

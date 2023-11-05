@@ -47,7 +47,7 @@ mod uuid {
                 <input
                     type="text"
                     class={class}
-                    id={props.id.unwrap_or_else(|| props.name.clone())}
+                    id={props.id.or_else(|| props.name.clone())}
                     name={props.name}
                     on:input=move |ev| props.signal.0.update(|x| x.value = event_target_value(&ev))
                     on:change=move |_| {
@@ -160,7 +160,7 @@ pub mod chrono {
                         <input
                             type="text"
                             class={class}
-                            id={props.id.unwrap_or_else(|| props.name.clone())}
+                            id={props.id.or_else(|| props.name.clone())}
                             name={props.name}
                             on:input=move |ev| props.signal.0.update(|x| x.value = event_target_value(&ev))
                             on:change=move |_| {

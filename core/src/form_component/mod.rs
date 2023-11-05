@@ -66,7 +66,8 @@ pub trait DefaultHtmlElement {
 pub struct RenderProps<T: 'static, Config = ()> {
     #[builder(default)]
     pub id: Option<Oco<'static, str>>,
-    pub name: Oco<'static, str>,
+    #[builder(default)]
+    pub name: Option<Oco<'static, str>>,
     #[builder(default)]
     pub class: Option<Oco<'static, str>>,
     #[builder(default)]

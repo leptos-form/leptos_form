@@ -9,13 +9,18 @@ use ::std::rc::Rc;
 #[builder(field_defaults(default, setter(into)))]
 #[derivative(Debug)]
 pub struct VecConfig<Config: Default> {
-    /// item level configuration, specific to the inner type of Vec
-    /// for which this config is being applied
+    /// item level configuration
+    /// "item" refers to the inner type of Vec for which this config is being applied
     pub item: Config,
+    /// class to be placed on container element which wraps both the label and the item
+    #[builder(setter(strip_option))]
+    pub item_container_class: Option<Oco<'static, str>>,
     /// custom class to be passed into each item's FormField props
-    pub item_class: Option<&'static str>,
+    #[builder(setter(strip_option))]
+    pub item_class: Option<Oco<'static, str>>,
     /// custom style to be passed into each item's FormField props
-    pub item_style: Option<&'static str>,
+    #[builder(setter(strip_option))]
+    pub item_style: Option<Oco<'static, str>>,
     /// label configuration for each item
     #[builder(setter(strip_option))]
     pub item_label: Option<VecItemLabel>,
@@ -29,17 +34,19 @@ pub struct VecConfig<Config: Default> {
 
 /// Label configuration which will be set for each item
 /// in a Vec of FormFields
-#[derive(Clone, Copy, Debug, Default, TypedBuilder)]
+#[derive(Clone, Debug, Default, TypedBuilder)]
 #[builder(field_defaults(default, setter(into)))]
 pub struct VecItemLabel {
     /// custom class to set for each label
-    pub class: Option<&'static str>,
+    #[builder(setter(strip_option))]
+    pub class: Option<Oco<'static, str>>,
     /// notation variant for the item label (determines the label content)
-    pub notation: VecItemLabelNotation,
+    pub notation: Option<VecItemLabelNotation>,
     /// punctuation style for the item label
-    pub punctuation: VecItemLabelPunctuation,
+    pub punctuation: Option<VecItemLabelPunctuation>,
     /// custom style to set for each label
-    pub style: Option<&'static str>,
+    #[builder(setter(strip_option))]
+    pub style: Option<Oco<'static, str>>,
 }
 
 /// When a label is configured to be set for a Vec of form fields,
@@ -52,11 +59,12 @@ pub enum VecItemLabelNotation {
     Number,
 }
 
+/// Punctuation applied to the vec item label. Note that this configuration
+/// is a no-op wihtout the use of VecItemLabelNotation.
 #[derive(Clone, Copy, Debug, Default)]
 pub enum VecItemLabelPunctuation {
-    #[default]
-    None,
     Parenthesis,
+    #[default]
     Period,
 }
 
@@ -184,9 +192,12 @@ where
 impl<T, El, S> FormComponent<Vec<El>> for Vec<T>
 where
     T: FormComponent<El, Signal = FormFieldSignal<S>>,
-    S: Clone + Eq + 'static,
+    S: Clone + Eq + 'static + std::fmt::Debug,
+    <T as FormField<El>>::Config: std::fmt::Debug,
 {
     fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
+        logging::log!("props={props:#?}");
+
         let (min_items, max_items) = props.config.size.split();
 
         let next_id =
@@ -225,6 +236,7 @@ where
 
         let VecConfig {
             item: item_config,
+            item_container_class,
             item_class,
             item_label,
             item_style,
@@ -234,85 +246,86 @@ where
         } = props.config;
 
         view! {
-            <For
-                key=|(_, (key, _))| *key
-                each=move || props.signal.get().value.into_iter().enumerate()
-                children=move |(index, (key, item))| {
-                    let id = || index.to_string();
+            <div id={props.id} class={props.class} style={props.style}>
+                <For
+                    key=|(_, (key, _))| *key
+                    each=move || props.signal.get().value.into_iter().enumerate()
+                    children=move |(index, (key, item))| {
+                        let id = || index.to_string();
 
-                    let item_props = RenderProps::builder()
-                        .id(Oco::Owned(id()))
-                        .name(crate::format_form_name(Some(&props.name), id()))
-                        .class(item_class.map(Oco::Borrowed).or_else(|| props.class.clone()))
-                        .style(item_style.map(Oco::Borrowed).or_else(|| props.style.clone()))
-                        .field_changed_class(props.field_changed_class.clone())
-                        .signal(item.signal)
-                        .config(item_config.clone())
-                        .build();
+                        let item_props = RenderProps::builder()
+                            .id(Oco::Owned(id()))
+                            .name(crate::format_form_name(props.name.as_ref(), id()))
+                            .class(item_class.clone())
+                            .style(item_style.clone())
+                            .field_changed_class(props.field_changed_class.clone())
+                            .signal(item.signal)
+                            .config(item_config.clone())
+                            .build();
 
-                    VecConfig::<<T as FormField<El>>::Config>::wrap(
-                        &size,
-                        item_class,
-                        item_label.as_ref(),
-                        item_style,
-                        &remove,
-                        props.signal,
-                        key,
-                        Oco::Owned(id()),
-                        <T as FormComponent<El>>::render(item_props),
-                    ).into_view()
-                }
-            />
-            {
-                let num_items_is_max = move || {
-                    let num_items = props.signal.with(|items| items.len());
-                    num_items >= max_items.unwrap_or(usize::MAX)
-                };
-
-                let cursor = move || if num_items_is_max() { None } else { Some("pointer") };
-                let opacity = move || if num_items_is_max() { Some("0.5") } else { None };
-
-                let on_add = move |_| {
-                    if !num_items_is_max() {
-                        props.signal.update(|items| {
-                            let id = next_id.get_untracked();
-                            items.insert(id, VecSignalItem { id, signal: T::default_signal() });
-                            next_id.update(|x| *x = id + 1);
-                        });
+                        VecConfig::<<T as FormField<El>>::Config>::wrap(
+                            &size,
+                            item_container_class.clone(),
+                            item_label.as_ref(),
+                            &remove,
+                            props.signal,
+                            key,
+                            Oco::Owned(id()),
+                            <T as FormComponent<El>>::render(item_props),
+                        ).into_view()
                     }
-                };
+                />
+                {
+                    let num_items_is_max = move || {
+                        let num_items = props.signal.with(|items| items.len());
+                        num_items >= max_items.unwrap_or(usize::MAX)
+                    };
 
-                match (&size, &add) {
-                    (VecConfigSize::Const(_), _)|(_, Adornment::None) => View::default(),
-                    (_, Adornment::Component(component)) => component(Rc::new(on_add), Rc::new(opacity)),
-                    (_, Adornment::Default) => view! {
-                        <input
-                            type="button"
-                            on:click=on_add
-                            style:cursor=cursor
-                            style:margin-top="0.5 rem"
-                            style:opacity=opacity
-                            value="Add"
-                        />
-                    }
-                    .into_view(),
-                    (_, Adornment::Spec(adornment_spec)) => {
-                        let style = (adornment_spec.class.is_none() && adornment_spec.style.is_none()).then_some("margin-top: 0.5rem;");
-                        view! {
+                    let cursor = move || if num_items_is_max() { None } else { Some("pointer") };
+                    let opacity = move || if num_items_is_max() { Some("0.5") } else { None };
+
+                    let on_add = move |_| {
+                        if !num_items_is_max() {
+                            props.signal.update(|items| {
+                                let id = next_id.get_untracked();
+                                items.insert(id, VecSignalItem { id, signal: T::default_signal() });
+                                next_id.update(|x| *x = id + 1);
+                            });
+                        }
+                    };
+
+                    match (&size, &add) {
+                        (VecConfigSize::Const(_), _)|(_, Adornment::None) => View::default(),
+                        (_, Adornment::Component(component)) => component(Rc::new(on_add), Rc::new(opacity)),
+                        (_, Adornment::Default) => view! {
                             <input
                                 type="button"
-                                class={adornment_spec.class.clone()}
-                                cursor=cursor
                                 on:click=on_add
+                                style:cursor=cursor
+                                style:margin-top="0.5 rem"
                                 style:opacity=opacity
-                                style=style
-                                value={adornment_spec.text.clone().unwrap_or(Oco::Borrowed("Add"))}
+                                value="Add"
                             />
                         }
-                        .into_view()
+                        .into_view(),
+                        (_, Adornment::Spec(adornment_spec)) => {
+                            let style = (adornment_spec.class.is_none() && adornment_spec.style.is_none()).then_some("margin-top: 0.5rem;");
+                            view! {
+                                <input
+                                    type="button"
+                                    class={adornment_spec.class.clone()}
+                                    cursor=cursor
+                                    on:click=on_add
+                                    style:opacity=opacity
+                                    style=style
+                                    value={adornment_spec.text.clone().unwrap_or(Oco::Borrowed("Add"))}
+                                />
+                            }
+                            .into_view()
+                        }
                     }
                 }
-            }
+            </div>
         }
     }
 }
@@ -346,18 +359,14 @@ impl<Config: Default> VecConfig<Config> {
     #[allow(clippy::too_many_arguments)]
     fn wrap<Signal>(
         size: &VecConfigSize,
-        item_class: Option<&'static str>,
+        item_container_class: Option<Oco<'static, str>>,
         item_label: Option<&VecItemLabel>,
-        item_style: Option<&'static str>,
         remove_adornment: &Adornment,
         signal: FormFieldSignal<IndexMap<usize, VecSignalItem<Signal>>>,
         key: usize,
         id: Oco<'static, str>,
         item: impl IntoView,
     ) -> impl IntoView {
-        static DEFAULT_ITEM_STYLE: &str =
-            "display: flex; flex-direction: row; align-items: center; margin-bottom: 0.5rem";
-
         let (min_items, _) = size.split();
         let num_items_is_min = move || {
             let num_items = signal.with(|items| items.len());
@@ -416,10 +425,8 @@ impl<Config: Default> VecConfig<Config> {
             }
         };
 
-        let item_style = item_style.or_else(|| item_class.is_none().then_some(DEFAULT_ITEM_STYLE));
-
         view! {
-            <div id={key} class={item_class} style={item_style}>
+            <div id={key} class={item_container_class} style="display: flex; flex-direction: row; align-items: center; margin-bottom: 0.5rem">
                 {match item_label {
                     Some(item_label) => item_label.wrap_label(key, id, item, signal),
                     None => item.into_view(),
@@ -439,13 +446,22 @@ impl VecItemLabel {
         signal: FormFieldSignal<IndexMap<usize, VecSignalItem<Signal>>>,
     ) -> View {
         let notation = self.notation;
-        let notation = move || {
-            let index = signal.with(|items| items.get_index_of(&key));
-            index.map(|index| notation.render(index))
+        let punctuation = self.punctuation;
+        let prefix = move || {
+            signal
+                .with(|items| items.get_index_of(&key))
+                .and_then(|index| match (notation, punctuation) {
+                    (Some(notation), punctuation) => {
+                        Some(notation.render(index) + punctuation.map(|x| x.render()).unwrap_or_default())
+                    }
+                    _ => None,
+                })
+                .map(|prefix| view! { <div>{prefix}</div> }.into_view())
+                .unwrap_or_default()
         };
         view! {
-            <label for={id} class={self.class} style={self.style}>
-                <div>{notation}{self.punctuation.render()}</div>
+            <label for={id} class={self.class.clone()} style={self.style.clone()}>
+                {prefix}
                 {item}
             </label>
         }
@@ -464,15 +480,16 @@ impl VecConfigSize {
 }
 
 impl VecItemLabelNotation {
-    fn render(&self, i: usize) -> String {
+    fn render(&self, index: usize) -> String {
+        let display_index = index + 1;
         let ascii_set = match self {
             Self::CapitalLetter => &ASCII_UPPER,
             Self::Letter => &ASCII_LOWER,
-            Self::Number => return (i + 1).to_string(),
+            Self::Number => return display_index.to_string(),
         };
-        let n = (i.ilog(ascii_set.len()) + 1) as usize;
-        let mut chars = Vec::with_capacity(n);
-        let mut num = i;
+        let n = (display_index.ilog(ascii_set.len()) + 1) as usize;
+        let mut chars = vec![' '; n];
+        let mut num = index;
         for j in 0..n {
             chars[n - 1 - j] = ascii_set[num % ascii_set.len()];
             num /= ascii_set.len();
@@ -484,7 +501,6 @@ impl VecItemLabelNotation {
 impl VecItemLabelPunctuation {
     fn render(&self) -> &'static str {
         match self {
-            Self::None => "",
             Self::Parenthesis => ")",
             Self::Period => ".",
         }

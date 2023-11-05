@@ -40,7 +40,7 @@ macro_rules! num_impl {
                     <input
                         type=num_impl!(@type $($($type)?)?)
                         class={class}
-                        id={props.id.unwrap_or_else(|| props.name.clone())}
+                        id={props.id.or_else(|| props.name.clone())}
                         max=num_impl!(@max $ty $($(, $max)?)?)
                         min=num_impl!(@min $ty $($(, $min)?)?)
                         name={props.name}

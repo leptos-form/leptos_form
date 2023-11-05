@@ -20,6 +20,8 @@ See an [extended example](#example) below.
 | groups      | A list of all groups within the form                                                                                                             | list\<[container](#container-attributes)\> | Y        |
 | id          | `id` property set on the wrapping \<Form\> element. Note that this id will prefixed by other ids if this type is used as a field in another form | string                                     | Y        |
 | label       | Default label configuration used for all fields                                                                                                  | [label](#label-attributes)                 | Y        |
+| wrapper     | Can only be used when derived on a newtype -- required to correctly produce the `name` attribute on fields                                       | none                                       | Y        |
+
 
 # Field attributes
 

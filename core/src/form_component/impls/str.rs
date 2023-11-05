@@ -46,7 +46,7 @@ macro_rules! str_impl {
                     <[<$el:lower>]
                         type="text"
                         class={class}
-                        id={props.id.unwrap_or_else(|| props.name.clone())}
+                        id={props.id.or_else(|| props.name.clone())}
                         name={props.name}
                         on:input=move |ev| props.signal.0.update(|x| x.value = event_target_value(&ev))
                         on:change=move |_| {
