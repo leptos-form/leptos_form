@@ -212,11 +212,14 @@ enum StringExpr {
 }
 
 impl FromMeta for StringExpr {
-    fn from_string(value: &str) -> Result<Self, darling::Error> {
-        Ok(Self::LitStr(value.to_string()))
-    }
     fn from_expr(expr: &syn::Expr) -> Result<Self, darling::Error> {
-        Ok(Self::Expr(expr.clone()))
+        Ok(match expr {
+            syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(lit_str),
+                ..
+            }) => Self::LitStr(lit_str.value()),
+            _ => Self::Expr(expr.clone()),
+        })
     }
 }
 
@@ -1883,7 +1886,7 @@ mod test {
                     use #leptos_form_krate::FormField;
                     use #leptos_krate::{IntoAttribute, IntoView};
 
-                    let _id_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "id");
+                    let _id_id = #leptos_form_krate::format_form_id(props.id.as_ref(), #leptos_krate::Oco::Borrowed("id"));
                     let _id_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "id");
                     let _id_props = #leptos_form_krate::RenderProps::builder()
                         .id(_id_id.clone())
@@ -1906,7 +1909,7 @@ mod test {
                     let ty = <::std::marker::PhantomData<(Uuid, <Uuid as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
                     let _id_view = #leptos_krate::view! { <FormField props=_id_props ty=ty /> };
 
-                    let _slug_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "slug");
+                    let _slug_id = #leptos_form_krate::format_form_id(props.id.as_ref(), #leptos_krate::Oco::Borrowed("slug"));
                     let _slug_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "slug");
                     let _slug_props = #leptos_form_krate::RenderProps::builder()
                         .id(_slug_id.clone())
@@ -1929,7 +1932,7 @@ mod test {
                     let ty = <::std::marker::PhantomData<(String, <String as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
                     let _slug_view = #leptos_krate::view! { <FormField props=_slug_props ty=ty /> };
 
-                    let _created_at_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "created-at");
+                    let _created_at_id = #leptos_form_krate::format_form_id(props.id.as_ref(), #leptos_krate::Oco::Borrowed("created-at"));
                     let _created_at_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "created_at");
                     let _created_at_props = #leptos_form_krate::RenderProps::builder()
                         .id(_created_at_id.clone())
@@ -1952,7 +1955,7 @@ mod test {
                     let ty = <::std::marker::PhantomData<(chrono::NaiveDateTime, <chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
                     let _created_at_view = #leptos_krate::view! { <FormField props=_created_at_props ty=ty /> };
 
-                    let _count_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "count");
+                    let _count_id = #leptos_form_krate::format_form_id(props.id.as_ref(), #leptos_krate::Oco::Borrowed("count"));
                     let _count_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "count");
                     let _count_props = #leptos_form_krate::RenderProps::builder()
                         .id(_count_id.clone())
@@ -2096,7 +2099,7 @@ mod test {
                     use #leptos_form_krate::FormField;
                     use #leptos_krate::{IntoAttribute, IntoView};
 
-                    let _abc_123_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "hello-there");
+                    let _abc_123_id = #leptos_form_krate::format_form_id(props.id.as_ref(), #leptos_krate::Oco::Borrowed("hello-there"));
                     let _abc_123_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "abc_123");
                     let _abc_123_props = #leptos_form_krate::RenderProps::builder()
                         .id(_abc_123_id.clone())
@@ -2120,7 +2123,7 @@ mod test {
                     let ty = <::std::marker::PhantomData<(Uuid, <Uuid as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
                     let _abc_123_view = #leptos_krate::view! { <FormField props=_abc_123_props ty=ty /> };
 
-                    let _zz_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "zz");
+                    let _zz_id = #leptos_form_krate::format_form_id(props.id.as_ref(), #leptos_krate::Oco::Borrowed("zz"));
                     let _zz_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "zz");
                     let _zz_props = #leptos_form_krate::RenderProps::builder()
                         .id(_zz_id.clone())
@@ -2243,7 +2246,7 @@ mod test {
                     use #leptos_form_krate::FormField;
                     use #leptos_krate::{IntoAttribute, IntoView};
 
-                    let _ayo_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "ayo");
+                    let _ayo_id = #leptos_form_krate::format_form_id(props.id.as_ref(), #leptos_krate::Oco::Borrowed("ayo"));
                     let _ayo_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "ayo");
                     let _ayo_props = #leptos_form_krate::RenderProps::builder()
                         .id(_ayo_id.clone())
@@ -2422,7 +2425,7 @@ mod test {
                     use #leptos_form_krate::FormField;
                     use #leptos_krate::{IntoAttribute, IntoView};
 
-                    let _ayo_id = #leptos_form_krate::format_form_id(props.id.as_ref(), "ayo");
+                    let _ayo_id = #leptos_form_krate::format_form_id(props.id.as_ref(), #leptos_krate::Oco::Borrowed("ayo"));
                     let _ayo_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "ayo");
                     let _ayo_props = #leptos_form_krate::RenderProps::builder()
                         .id(_ayo_id.clone())
@@ -2482,7 +2485,7 @@ mod test {
 
                     let signal = #leptos_krate::create_rw_signal(#leptos_form_krate::RenderProps::builder()
                         .id(None)
-                        .name("my_form_data")
+                        .name(#leptos_krate::Oco::Borrowed("my_form_data"))
                         .signal(initial.clone().into_signal(&config))
                         .config(config.clone())
                         .build()
@@ -2497,7 +2500,7 @@ mod test {
                                 };
                                 let new_props = #leptos_form_krate::RenderProps::builder()
                                     .id(None)
-                                    .name("my_form_data")
+                                    .name(#leptos_krate::Oco::Borrowed("my_form_data"))
                                     .signal(initial.clone().into_signal(&config))
                                     .config(config.clone())
                                     .build();
