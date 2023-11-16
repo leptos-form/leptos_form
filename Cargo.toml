@@ -4,7 +4,7 @@ resolver = "2"
 
 [workspace.package]
 # update the internal crate versions when updating this workspace version
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 rust-version = "1.75.0"
 authors = ["Trey Lowerison <19714082+tlowerison@users.noreply.github.com>"]
