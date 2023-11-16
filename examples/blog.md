@@ -10,8 +10,7 @@ use leptos_form::prelude::*;
     component(
         action = create_blog_post(data),
         reset_on_success,
-        on_success = |value, _| (view! { <div>{move || format!(r#"Created blog post with id "{}"."#, value.id)}</div> }.into_view()),
-        submit = view! { <input class="cursor-pointer" type="submit" value="Create" />},
+        on_success = |value, _| view!(<div>{move || format!(r#"Created blog post with id "{}"."#, value.id)}</div>).into_view(),
     ),
     field_class = "appearance-none block w-full bg-gray-200 text-gray-700 border border-gray-200 rounded py-3 px-4 leading-tight focus:outline-none focus:bg-white focus:border-gray-500",
     groups(
@@ -61,8 +60,7 @@ pub struct BlogPostPost {
                 .build()
         },
         name = BlogPostPatchForm_,
-        on_success = |_, _| (view! { <div>{move || "Updated blog post."}</div> }.into_view()),
-        submit = view! { <input class="cursor-pointer border border-1 rounded px-2 py-1" type="submit" value="Update" />},
+        on_success = |_, _| (view!(<div>{move || "Updated blog post."}</div>).into_view()),
     ),
 )]
 pub struct BlogPostPatchForm(#[form(label = "none")] pub BlogPostPost);
@@ -98,7 +96,10 @@ pub fn BlogPostCreate() -> impl IntoView {
             is_not_admin=router_fallback
             is_admin=move || view! {
                 <div class="w-full flex flex-row items-center justify-center">
-                    <BlogPostPost initial={initial.clone()} />
+                    <BlogPostPost
+                        initial={initial.clone()}
+                        top=|| view!(<input class="cursor-pointer" type="submit" value="Create" />)
+                    />
                 </div>
             }
         />
@@ -162,7 +163,10 @@ pub fn BlogPostUpdate() -> impl IntoView {
                             <ErrorBoundary fallback=eb_fallback>
                                 {res.map(|blog_post| view! {
                                     <div class="w-full flex flex-row items-center justify-center">
-                                        <BlogPostPatchForm_ initial={BlogPostPatchForm::from(blog_post)} />
+                                        <BlogPostPatchForm_
+                                            initial={BlogPostPatchForm::from(blog_post)}
+                                            top=|| view!(<input class="cursor-pointer border border-1 rounded px-2 py-1" type="submit" value="Update" />)
+                                        />
                                     </div>
                                 })}
                             </ErrorBoundary>

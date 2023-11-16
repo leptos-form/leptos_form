@@ -64,7 +64,6 @@ mod my_crate {
     #[form(
         component(
             action = create_my_data(my_data),
-            submit = view!(<input type="button" value="Submit" />),
             on_success = |DbMyData { id, .. }, _| view!(<div>{format!("Created {id}")}</div>),
             reset_on_success,
         ),
@@ -82,7 +81,12 @@ mod my_crate {
 
     #[component]
     pub fn MyComponent() -> impl IntoView {
-        view!(<MyData initial={MyData::default()} />)
+        view! {
+            <MyData
+                initial={MyData::default()}
+                top=|| view!(<input type="button" value="Submit" />)
+            />
+        }
     }
 
     #[server]

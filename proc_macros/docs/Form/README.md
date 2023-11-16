@@ -205,7 +205,6 @@ mod blog_post {
             class = "w-full max-w-lg",
             reset_on_success,
             on_success = |value, _| (view! { <div>{move || format!(r#"Created blog post with id "{}"."#, value.id)}</div> }.into_view()),
-            submit = view! { <input class="cursor-pointer" type="submit" value="Create" />},
         ),
         groups(
             container(tag = "div", class="flex flex-wrap -mx-3 mb-6", style = "color: red;"),
@@ -245,7 +244,10 @@ mod blog_post {
 
         view! {
             <div class="w-full flex flex-row items-center justify-center">
-                <BlogPost initial={initial.clone()} />
+                <BlogPost
+                    initial={initial.clone()}
+                    top=|| view!(<input class="cursor-pointer" type="submit" value="Create" />)
+                />
             </div>
         }
     }
@@ -312,7 +314,6 @@ mod blog_post {
             map_submit = map_blog_patch_submit,
             name = BlogPostPatchForm_,
             on_success = |_, _| (view! { <div>{move || "Updated blog post."}</div> }.into_view()),
-            submit = view! { <input class="cursor-pointer border border-1 rounded px-2 py-1" type="submit" value="Update" />},
         ),
     )]
     pub struct BlogPostPatchForm(#[form(label = "none")] pub BlogPost);
@@ -337,7 +338,10 @@ mod blog_post {
                         <ErrorBoundary fallback=eb_fallback>
                             {res.map(|blog_post| view! {
                                 <div class="w-full flex flex-row items-center justify-center">
-                                    <BlogPostPatchForm_ initial={BlogPostPatchForm::from(blog_post)} />
+                                    <BlogPostPatchForm_
+                                        initial={BlogPostPatchForm::from(blog_post)}
+                                        top=|| view!(<input class="cursor-pointer border border-1 rounded px-2 py-1" type="submit" value="Update" />)
+                                    />
                                 </div>
                             })}
                         </ErrorBoundary>

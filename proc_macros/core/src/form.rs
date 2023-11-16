@@ -622,7 +622,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                                         #config_def
                                         let new_props = #props_builder;
                                         #props_signal_ident.update(move |props| *props = new_props);
-                                        had_reset_called.update(|x| *x = true);
+                                        _had_reset_called.update(|x| *x = true);
                                         Some(value)
                                     },
                                     Some(Some(prev_value)) => None,
@@ -642,7 +642,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                                     None|Some(None) => {
                                         #props_signal_ident.with(|props| #ident::reset_initial_value(&props.signal));
                                         #props_signal_ident.with(|props| #ident::recurse(&props.signal));
-                                        had_reset_called.update(|x| *x = true);
+                                        _had_reset_called.update(|x| *x = true);
                                         Some(value)
                                     },
                                     Some(Some(prev_value)) => None,
@@ -756,8 +756,8 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                                 async move {
                                     use #leptos_form_krate::cache::Cache;
 
-                                    if had_reset_called.get() {
-                                        had_reset_called.update(|x| *x = false);
+                                    if _had_reset_called.get() {
+                                        _had_reset_called.update(|x| *x = false);
                                         return;
                                     }
 
@@ -823,7 +823,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
                         let #props_signal_ident = #leptos_krate::create_rw_signal(#props_builder);
 
-                        let had_reset_called = #leptos_krate::create_rw_signal(false);
+                        let _had_reset_called = #leptos_krate::create_rw_signal(false);
                         #cache_effects
 
                         let #parse_error_handler_ident = |err: #leptos_form_krate::FormError| #leptos_krate::logging::debug_warn!("{err}");
@@ -2038,12 +2038,40 @@ mod test {
             impl #leptos_form_krate::FormField<#leptos_krate::View> for MyFormData {
                 type Config = __MyFormDataConfig;
                 type Signal = __MyFormDataSignal;
-                fn default_signal() -> Self::Signal {
-                    __MyFormDataSignal {
-                        id: <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
-                        slug: <String as #leptos_form_krate::FormField<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
-                        created_at: <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
-                        count: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
+                fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal {
+                    match initial {
+                        Some(initial) => {
+                            __MyFormDataSignal {
+                                id: <Uuid as ::leptos_form::FormField<
+                                    <Uuid as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::default_signal(&config.id, Some(initial.id)),
+                                slug: <String as ::leptos_form::FormField<
+                                    <String as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::default_signal(&config.slug, Some(initial.slug)),
+                                created_at: <chrono::NaiveDateTime as ::leptos_form::FormField<
+                                    <chrono::NaiveDateTime as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::default_signal(&config.created_at, Some(initial.created_at)),
+                                count: <u8 as ::leptos_form::FormField<
+                                    <u8 as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::default_signal(&config.count, Some(initial.count)),
+                            }
+                        }
+                        None => {
+                            __MyFormDataSignal {
+                                id: <Uuid as ::leptos_form::FormField<
+                                    <Uuid as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::default_signal(&config.id, None),
+                                slug: <String as ::leptos_form::FormField<
+                                    <String as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::default_signal(&config.slug, None),
+                                created_at: <chrono::NaiveDateTime as ::leptos_form::FormField<
+                                    <chrono::NaiveDateTime as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::default_signal(&config.created_at, None),
+                                count: <u8 as ::leptos_form::FormField<
+                                    <u8 as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::default_signal(&config.count, None),
+                            }
+                        }
                     }
                 }
                 fn is_initial_value(signal: &Self::Signal) -> bool {
@@ -2052,12 +2080,44 @@ mod test {
                     <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.created_at) &&
                     <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.count)
                 }
-                fn into_signal(self, config: &Self::Config) -> Self::Signal {
-                    __MyFormDataSignal {
-                        id: <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::into_signal(self.id, &config.id),
-                        slug: <String as #leptos_form_krate::FormField<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::into_signal(self.slug, &config.slug),
-                        created_at: <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::into_signal(self.created_at, &config.created_at),
-                        count: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::into_signal(self.count, &config.count),
+                fn into_signal(self, config: &Self::Config, initial: Option<Self>) -> Self::Signal {
+                    match initial {
+                        Some(initial) => {
+                            __MyFormDataSignal {
+                                id: <Uuid as ::leptos_form::FormField<
+                                    <Uuid as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(self.id, &config.id, Some(initial.id)),
+                                slug: <String as ::leptos_form::FormField<
+                                    <String as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(self.slug, &config.slug, Some(initial.slug)),
+                                created_at: <chrono::NaiveDateTime as ::leptos_form::FormField<
+                                    <chrono::NaiveDateTime as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(
+                                    self.created_at,
+                                    &config.created_at,
+                                    Some(initial.created_at),
+                                ),
+                                count: <u8 as ::leptos_form::FormField<
+                                    <u8 as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(self.count, &config.count, Some(initial.count)),
+                            }
+                        }
+                        None => {
+                            __MyFormDataSignal {
+                                id: <Uuid as ::leptos_form::FormField<
+                                    <Uuid as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(self.id, &config.id, None),
+                                slug: <String as ::leptos_form::FormField<
+                                    <String as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(self.slug, &config.slug, None),
+                                created_at: <chrono::NaiveDateTime as ::leptos_form::FormField<
+                                    <chrono::NaiveDateTime as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(self.created_at, &config.created_at, None),
+                                count: <u8 as ::leptos_form::FormField<
+                                    <u8 as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(self.count, &config.count, None),
+                            }
+                        }
                     }
                 }
                 fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, #leptos_form_krate::FormError> {
@@ -2067,6 +2127,20 @@ mod test {
                         created_at: <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::try_from_signal(signal.created_at, &config.created_at)?,
                         count: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::try_from_signal(signal.count, &config.count)?,
                     })
+                }
+                fn recurse(signal: &Self::Signal) {
+                    <Uuid as ::leptos_form::FormField<
+                        <Uuid as ::leptos_form::DefaultHtmlElement>::El,
+                    >>::recurse(&signal.id);
+                    <String as ::leptos_form::FormField<
+                        <String as ::leptos_form::DefaultHtmlElement>::El,
+                    >>::recurse(&signal.slug);
+                    <chrono::NaiveDateTime as ::leptos_form::FormField<
+                        <chrono::NaiveDateTime as ::leptos_form::DefaultHtmlElement>::El,
+                    >>::recurse(&signal.created_at);
+                    <u8 as ::leptos_form::FormField<
+                        <u8 as ::leptos_form::DefaultHtmlElement>::El,
+                    >>::recurse(&signal.count);
                 }
                 fn reset_initial_value(signal: &Self::Signal) {
                     <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::reset_initial_value(&signal.id);
@@ -2261,20 +2335,60 @@ mod test {
                 type Config = __MyFormDataConfig;
                 type Signal = __MyFormDataSignal;
 
-                fn default_signal() -> Self::Signal {
-                    __MyFormDataSignal {
-                        abc_123: <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
-                        zz: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
+                fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal {
+                    match initial {
+                       Some(initial) => {
+                           __MyFormDataSignal {
+                               abc_123: <Uuid as ::leptos_form::FormField<
+                                   <Uuid as ::leptos_form::DefaultHtmlElement>::El,
+                               >>::default_signal(&config.abc_123, Some(initial.abc_123)),
+                               zz: <u8 as ::leptos_form::FormField<
+                                   <u8 as ::leptos_form::DefaultHtmlElement>::El,
+                               >>::default_signal(&config.zz, Some(initial.zz)),
+                           }
+                       }
+                       None => {
+                           __MyFormDataSignal {
+                               abc_123: <Uuid as ::leptos_form::FormField<
+                                   <Uuid as ::leptos_form::DefaultHtmlElement>::El,
+                               >>::default_signal(&config.abc_123, None),
+                               zz: <u8 as ::leptos_form::FormField<
+                                   <u8 as ::leptos_form::DefaultHtmlElement>::El,
+                               >>::default_signal(&config.zz, None),
+                           }
+                       }
                     }
                 }
                 fn is_initial_value(signal: &Self::Signal) -> bool {
                     true && <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.abc_123) &&
                     <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.zz)
                 }
-                fn into_signal(self, config: &Self::Config) -> Self::Signal {
-                    __MyFormDataSignal {
-                        abc_123: <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::into_signal(self.abc_123, &config.abc_123),
-                        zz: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::into_signal(self.zz, &config.zz),
+                fn into_signal(self, config: &Self::Config, initial: Option<Self>) -> Self::Signal {
+                    match initial {
+                        Some(initial) => {
+                            __MyFormDataSignal {
+                                abc_123: <Uuid as ::leptos_form::FormField<
+                                    <Uuid as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(
+                                    self.abc_123,
+                                    &config.abc_123,
+                                    Some(initial.abc_123),
+                                ),
+                                zz: <u8 as ::leptos_form::FormField<
+                                    <u8 as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(self.zz, &config.zz, Some(initial.zz)),
+                            }
+                        }
+                        None => {
+                            __MyFormDataSignal {
+                                abc_123: <Uuid as ::leptos_form::FormField<
+                                    <Uuid as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(self.abc_123, &config.abc_123, None),
+                                zz: <u8 as ::leptos_form::FormField<
+                                    <u8 as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(self.zz, &config.zz, None),
+                            }
+                        }
                     }
                 }
                 fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, #leptos_form_krate::FormError> {
@@ -2282,6 +2396,14 @@ mod test {
                         abc_123: <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::try_from_signal(signal.abc_123, &config.abc_123)?,
                         zz: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::try_from_signal(signal.zz, &config.zz)?,
                     })
+                }
+                fn recurse(signal: &Self::Signal) {
+                    <Uuid as ::leptos_form::FormField<
+                        <Uuid as ::leptos_form::DefaultHtmlElement>::El,
+                    >>::recurse(&signal.abc_123);
+                    <u8 as ::leptos_form::FormField<
+                        <u8 as ::leptos_form::DefaultHtmlElement>::El,
+                    >>::recurse(&signal.zz);
                 }
                 fn reset_initial_value(signal: &Self::Signal) {
                     <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::reset_initial_value(&signal.abc_123);
@@ -2413,23 +2535,46 @@ mod test {
                 type Config = __MyFormDataConfig;
                 type Signal = __MyFormDataSignal;
 
-                fn default_signal() -> Self::Signal {
-                    __MyFormDataSignal {
-                        ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
+                fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal {
+                    match initial {
+                        Some(initial) => __MyFormDataSignal {
+                            ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(&config.ayo, Some(initial.ayo)),
+                        },
+                        None => __MyFormDataSignal {
+                            ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(&config.ayo, None),
+                        },
                     }
                 }
                 fn is_initial_value(signal: &Self::Signal) -> bool {
                     true && <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.ayo)
                 }
-                fn into_signal(self, config: &Self::Config) -> Self::Signal {
-                    __MyFormDataSignal {
-                        ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::into_signal(self.ayo, &config.ayo),
-                    }
+                fn into_signal(self, config: &Self::Config, initial: Option<Self>) -> Self::Signal {
+                    match initial {
+                        Some(initial) => {
+                            __MyFormDataSignal {
+                                ayo: <u8 as ::leptos_form::FormField<
+                                    <u8 as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(self.ayo, &config.ayo, Some(initial.ayo)),
+                            }
+                        }
+                        None => {
+                            __MyFormDataSignal {
+                                ayo: <u8 as ::leptos_form::FormField<
+                                    <u8 as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(self.ayo, &config.ayo, None),
+                            }
+                        }
+                     }
                 }
                 fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, #leptos_form_krate::FormError> {
                     Ok(MyFormData {
                         ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::try_from_signal(signal.ayo, &config.ayo)?,
                     })
+                }
+                fn recurse(signal: &Self::Signal) {
+                    <u8 as ::leptos_form::FormField<
+                        <u8 as ::leptos_form::DefaultHtmlElement>::El,
+                    >>::recurse(&signal.ayo);
                 }
                 fn reset_initial_value(signal: &Self::Signal) {
                     <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::reset_initial_value(&signal.ayo);
@@ -2480,14 +2625,24 @@ mod test {
             mod leptos_form_component_my_form_data {
                 use super::*;
                 use #leptos_krate::IntoView;
+                use ::leptos_form::internal::wasm_bindgen::{
+                    closure::Closure, JsCast, UnwrapThrowExt,
+                };
 
                 #[allow(unused_imports)]
                 #[#leptos_krate::component]
-                pub fn MyFormData(initial: MyFormData) -> impl IntoView {
+                pub fn MyFormData(
+                    mut initial: MyFormData,
+                    #[prop(optional, into)]
+                    top: Option<::leptos_form::components::LeptosFormChildren>,
+                    #[prop(optional, into)]
+                    bottom: Option<::leptos_form::components::LeptosFormChildren>,
+                ) -> impl IntoView {
                     use #leptos_form_krate::{FormField, components::FormSubmissionHandler};
                     use #leptos_krate::{IntoAttribute, IntoView, SignalGet, SignalUpdate, SignalWith};
-                    use ::std::rc::Rc;
+                    use ::leptos_form::internal::wasm_bindgen::UnwrapThrowExt;
                     use #leptos_router_krate::Form;
+                    use ::std::rc::Rc;
 
                     let config = __MyFormDataConfig {
                         ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
@@ -2496,15 +2651,18 @@ mod test {
                     let signal = #leptos_krate::create_rw_signal(#leptos_form_krate::RenderProps::builder()
                         .id(None)
                         .name("")
-                        .signal(initial.clone().into_signal(&config))
+                        .signal(initial.clone().into_signal(&config, Some(initial.clone())))
                         .config(config.clone())
                         .build()
                     );
+                    let _had_reset_called = ::leptos_form::internal::leptos::create_rw_signal(false);
                     let parse_error_handler = |err: #leptos_form_krate::FormError| #leptos_krate::logging::debug_warn!("{err}");
                     let ty = <::std::marker::PhantomData<(MyFormData, #leptos_krate::View)> as Default>::default();
                     #leptos_krate::view! {
                         <Form action="/api/my-form-data">
+                            {top.map(|x| (x.0)())}
                             {move || #leptos_krate::view! { <FormField props=signal.get() ty=ty /> }}
+                            {bottom.map(|x| (x.0)())}
                         </Form>
                     }
                 }
@@ -2593,23 +2751,54 @@ mod test {
                 type Config = __MyFormDataConfig;
                 type Signal = __MyFormDataSignal;
 
-                fn default_signal() -> Self::Signal {
-                    __MyFormDataSignal {
-                        ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
+                fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal {
+                    match initial {
+                        Some(initial) => {
+                            __MyFormDataSignal {
+                                ayo: <u8 as crate::FormField<
+                                    <u8 as crate::DefaultHtmlElement>::El,
+                                >>::default_signal(&config.ayo, Some(initial.ayo)),
+                            }
+                        }
+                        None => {
+                            __MyFormDataSignal {
+                                ayo: <u8 as crate::FormField<
+                                    <u8 as crate::DefaultHtmlElement>::El,
+                                >>::default_signal(&config.ayo, None),
+                            }
+                        }
                     }
                 }
                 fn is_initial_value(signal: &Self::Signal) -> bool {
                     true && <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.ayo)
                 }
-                fn into_signal(self, config: &Self::Config) -> Self::Signal {
-                    __MyFormDataSignal {
-                        ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::into_signal(self.ayo, &config.ayo),
+                fn into_signal(self, config: &Self::Config, initial: Option<Self>) -> Self::Signal {
+                    match initial {
+                        Some(initial) => {
+                            __MyFormDataSignal {
+                                ayo: <u8 as crate::FormField<
+                                    <u8 as crate::DefaultHtmlElement>::El,
+                                >>::into_signal(self.ayo, &config.ayo, Some(initial.ayo)),
+                            }
+                        }
+                        None => {
+                            __MyFormDataSignal {
+                                ayo: <u8 as crate::FormField<
+                                    <u8 as crate::DefaultHtmlElement>::El,
+                                >>::into_signal(self.ayo, &config.ayo, None),
+                            }
+                        }
                     }
                 }
                 fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, #leptos_form_krate::FormError> {
                     Ok(MyFormData {
                         ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::try_from_signal(signal.ayo, &config.ayo)?,
                     })
+                }
+                fn recurse(signal: &Self::Signal) {
+                    <u8 as crate::FormField<
+                        <u8 as crate::DefaultHtmlElement>::El,
+                    >>::recurse(&signal.ayo);
                 }
                 fn reset_initial_value(signal: &Self::Signal) {
                     <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::reset_initial_value(&signal.ayo);
@@ -2662,14 +2851,21 @@ mod test {
             mod leptos_form_component_my_form_data {
                 use super::*;
                 use #leptos_krate::IntoView;
+                use crate::internal::wasm_bindgen::{closure::Closure, JsCast, UnwrapThrowExt};
 
                 #[allow(unused_imports)]
                 #[#leptos_krate::island]
-                pub fn MyFormData(initial: MyFormData) -> impl IntoView {
+                pub fn MyFormData(
+                    mut initial: MyFormData,
+                    #[prop(optional, into)]
+                    top: Option<crate::components::LeptosFormChildren>,
+                    #[prop(optional, into)]
+                    bottom: Option<crate::components::LeptosFormChildren>,
+                ) -> impl IntoView {
                     use #leptos_form_krate::{FormField, components::FormSubmissionHandler};
                     use #leptos_krate::{IntoAttribute, IntoView, SignalGet, SignalUpdate, SignalWith};
-                    use #leptos_router_krate::Form;
                     use #wasm_bindgen_krate::UnwrapThrowExt;
+                    use #leptos_router_krate::Form;
                     use ::std::rc::Rc;
 
                     fn server_fn_inference<T: Clone, U>(f: impl Fn(T) -> U) -> impl Fn(&T) -> U {
@@ -2684,25 +2880,40 @@ mod test {
                     let signal = #leptos_krate::create_rw_signal(#leptos_form_krate::RenderProps::builder()
                         .id(None)
                         .name(#leptos_krate::Oco::Borrowed("my_form_data"))
-                        .signal(initial.clone().into_signal(&config, None))
+                        .signal(initial.clone().into_signal(&config, Some(initial.clone())))
                         .config(config.clone())
                         .build()
                     );
+                    let _had_reset_called = crate::internal::leptos::create_rw_signal(false);
                     let parse_error_handler = |err: #leptos_form_krate::FormError| #leptos_krate::logging::debug_warn!("{err}");
                     #leptos_krate::create_effect({
                         let initial = initial.clone();
-                        move |_| {
-                            if let Some(Ok(_)) = action.value().get() {
-                                let config = __MyFormDataConfig {
-                                    ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
-                                };
-                                let new_props = #leptos_form_krate::RenderProps::builder()
-                                    .id(None)
-                                    .name(#leptos_krate::Oco::Borrowed("my_form_data"))
-                                    .signal(initial.clone().into_signal(&config, None))
-                                    .config(config.clone())
-                                    .build();
-                                signal.update(move |props| *props = new_props);
+                        let action_value = action.value();
+                        move |prev_value| {
+                            let value = action_value.get();
+                            if let None | Some(Err(_)) = value.as_ref() {
+                                return None;
+                            }
+                            match prev_value {
+                                None | Some(None) => {
+                                    let config = __MyFormDataConfig {
+                                        ayo: <u8 as crate::FormField<
+                                            <u8 as crate::DefaultHtmlElement>::El,
+                                        >>::Config::default(),
+                                    };
+                                    let new_props = crate::RenderProps::builder()
+                                        .id(None)
+                                        .name(crate::internal::leptos::Oco::Borrowed("my_form_data"))
+                                        .signal(
+                                            initial.clone().into_signal(&config, Some(initial.clone())),
+                                        )
+                                        .config(config.clone())
+                                        .build();
+                                    signal.update(move |props| *props = new_props);
+                                    _had_reset_called.update(|x| *x = true);
+                                    Some(value)
+                                }
+                                Some(Some(prev_value)) => None,
                             }
                         }
                     });
@@ -2720,7 +2931,9 @@ mod test {
                                 action.dispatch(data);
                             }
                         >
+                            {top.map(|x| (x.0)())}
                             {move || #leptos_krate::view! { <FormField props=signal.get() ty=ty /> }}
+                            {bottom.map(|x| (x.0)())}
                             <FormSubmissionHandler
                                 action=action
                                 error_view_ty={<::std::marker::PhantomData<#leptos_krate::View> as Default>::default()}
