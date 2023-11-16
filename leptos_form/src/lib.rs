@@ -34,4 +34,10 @@ pub mod internal {
     pub use leptos;
     pub use leptos_router;
     pub use wasm_bindgen;
+
+    #[cfg(feature = "cache-local-storage")]
+    pub use js_sys;
+
+    #[cfg(feature = "cache-local-storage")]
+    pub use web_sys;
 }

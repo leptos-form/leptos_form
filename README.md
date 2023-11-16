@@ -46,6 +46,8 @@ alt="Unsafe Rust forbidden" />
 This crate offers the following features, all of which are not activated by default:
 
 - `bigdecimal`: Provides impls for [`BigDecimal`](https://docs.rs/bigdecimal/latest/bigdecimal/struct.BigDecimal.html)
+- `cache-local-storage`: Provides support for writing intermediate form data to/from local storage.
+- `cache-serde_json`: Provides support for (de)serializing form state as JSON.
 - `chrono`: Provides impls for [`DateTime`](https://docs.rs/chrono/latest/chrono/struct.DateTime.html), [`NaiveDate`](https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDate.html), [`NaiveDateTime`](https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDateTime.html)
 - `num-bigint`: Provides impls for [`BigInt`](https://docs.rs/num-bigint/latest/num_bigint/struct.BigInt.html) and [`BigUint`](https://docs.rs/num-bigint/latest/num_bigint/struct.BigUint.html)
 - `uuid`: Provides impls for [`Uuid`](https://docs.rs/uuid/latest/uuid/struct.Uuid.html)

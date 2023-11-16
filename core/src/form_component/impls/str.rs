@@ -19,23 +19,31 @@ macro_rules! str_impl {
             type Config = ();
             type Signal = FormFieldSignal<String>;
 
-            fn default_signal() -> Self::Signal {
-                Default::default()
+            fn default_signal(_: &Self::Config, initial: Option<Self>) -> Self::Signal {
+                FormFieldSignal::new_with_default_value(initial.map(|x| x.to_string()))
             }
-            fn is_default_value(signal: &Self::Signal) -> bool {
-                signal.with(|x| x.value.is_empty())
+            fn is_initial_value(signal: &Self::Signal) -> bool {
+                signal.value.with(|value| signal.initial.with(|initial| {
+                    match initial {
+                        Some(initial) => initial == value,
+                        None => value.is_empty(),
+                    }
+                }))
             }
-            fn into_signal(self, _: &Self::Config) -> Self::Signal {
-                Self::Signal::from(self.to_string())
+            fn into_signal(self, _: &Self::Config, initial: Option<Self>) -> Self::Signal {
+                FormFieldSignal::new(self.to_string(), initial.map(|x| x.to_string()))
             }
             fn try_from_signal(signal: Self::Signal, _: &Self::Config) -> Result<Self, FormError> {
                 Ok(str_impl!(@from signal $($from_signal)?))
             }
+            fn recurse(signal: &Self::Signal) {
+                signal.value.with(|_| {})
+            }
             fn reset_initial_value(signal: &Self::Signal) {
-                signal.update(|sig| sig.initial = Some(sig.value.clone()));
+                signal.value.with(|value| signal.initial.update(|initial| *initial = Some(value.clone())));
             }
             fn with_error<O>(signal: &Self::Signal, f: impl FnOnce(Option<&FormError>) -> O) -> O {
-                signal.with(|x| f(x.error.as_ref()))
+                signal.error.with(|error| f(error.as_ref()))
             }
         }
 
@@ -48,26 +56,26 @@ macro_rules! str_impl {
                         class={class}
                         id={props.id.or_else(|| props.name.clone())}
                         name={props.name}
-                        on:input=move |ev| props.signal.0.update(|x| x.value = event_target_value(&ev))
+                        on:input=move |ev| props.signal.value.update(|value| *value = event_target_value(&ev))
                         on:change=move |_| {
                             if let Err(form_error) = <Self as FormField<HtmlElement<Input>>>::try_from_signal(props.signal, &props.config) {
-                                props.signal.update(|x| x.error = Some(form_error));
-                            } else if props.signal.with_untracked(|x| x.error.is_some()) {
-                                props.signal.update(|x| x.error = None);
+                                props.signal.error.update(|error| *error = Some(form_error));
+                            } else if props.signal.error.with_untracked(|error| error.is_some()) {
+                                props.signal.error.update(|error| *error = None);
                             }
                         }
                         prop:class={move || class.with(|x| x.as_ref().map(|x| JsValue::from_str(&*x)))}
-                        prop:value={props.signal.0}
+                        prop:value={props.signal.value}
                         style={props.style}
-                        value=move || props.signal.get().value
+                        value=props.signal.value
                     />
                 }
             }
         }
     } };
 
-    (@from $signal:ident) => { $signal.get().value };
-    (@from $signal:ident $from_signal:expr) => { $from_signal($signal.get().value) };
+    (@from $signal:ident) => { $signal.value.get() };
+    (@from $signal:ident $from_signal:expr) => { $from_signal($signal.value.get()) };
 }
 
 str_impl!(

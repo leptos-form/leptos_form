@@ -133,43 +133,67 @@ pub struct VecSignalItem<Signal> {
 
 impl<T, El> FormField<Vec<El>> for Vec<T>
 where
-    T: FormField<El>,
-    <T as FormField<El>>::Signal: Clone,
+    T: Clone + FormField<El>,
+    <T as FormField<El>>::Signal: Clone + std::fmt::Debug,
 {
     type Config = VecConfig<<T as FormField<El>>::Config>;
     type Signal = FormFieldSignal<IndexMap<usize, VecSignalItem<<T as FormField<El>>::Signal>>>;
 
-    fn default_signal() -> Self::Signal {
-        Default::default()
-    }
-    fn is_default_value(signal: &Self::Signal) -> bool {
-        signal.with(|sig| match sig.initial.as_ref() {
-            Some(initial) => {
-                let no_keys_changed =
-                    sig.value.len() == initial.len() && sig.value.last().map(|x| x.0) == initial.last().map(|x| x.0);
-                if !no_keys_changed {
-                    return false;
-                }
-                sig.value.iter().all(|(_, x)| T::is_default_value(&x.signal))
-            }
-            None => sig.value.is_empty(),
-        })
-    }
-    fn into_signal(self, config: &Self::Config) -> Self::Signal {
-        Self::Signal::from(
-            self.into_iter()
+    fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal {
+        FormFieldSignal::new_with_default_value(initial.map(|x| {
+            x.into_iter()
                 .enumerate()
-                .map(|(i, item)| {
+                .map(|(i, initial)| {
                     (
                         i,
                         VecSignalItem {
                             id: i,
-                            signal: item.into_signal(&config.item),
+                            signal: T::default_signal(&config.item, Some(initial)),
                         },
                     )
                 })
-                .collect::<IndexMap<_, _>>(),
-        )
+                .collect::<IndexMap<_, _>>()
+        }))
+    }
+    fn is_initial_value(signal: &Self::Signal) -> bool {
+        signal.initial.with(|initial| {
+            signal.value.with(|value| match initial.as_ref() {
+                Some(initial) => {
+                    let no_keys_changed = value.len() == initial.len()
+                        && value.last().map(|item| item.0) == initial.last().map(|item| item.0);
+                    if !no_keys_changed {
+                        return false;
+                    }
+                    value.iter().all(|(_, item)| T::is_initial_value(&item.signal))
+                }
+                None => value.is_empty(),
+            })
+        })
+    }
+    fn into_signal(self, config: &Self::Config, initial: Option<Self>) -> Self::Signal {
+        let has_initial = initial.is_some();
+        let mut initial = initial
+            .map(|x| x.into_iter().map(Some).collect::<Vec<_>>())
+            .unwrap_or_default();
+        if initial.len() < self.len() {
+            initial.append(&mut vec![None; self.len() - initial.len()]);
+        }
+        let value = self
+            .into_iter()
+            .zip(initial)
+            .enumerate()
+            .map(|(i, (item, initial))| {
+                (
+                    i,
+                    VecSignalItem {
+                        id: i,
+                        signal: item.into_signal(&config.item, initial),
+                    },
+                )
+            })
+            .collect::<IndexMap<_, _>>();
+        let initial = has_initial.then(|| value.clone());
+        FormFieldSignal::new(value, initial)
     }
     fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError> {
         signal.with(|value| {
@@ -179,9 +203,12 @@ where
                 .collect()
         })
     }
+    fn recurse(signal: &Self::Signal) {
+        signal.with(|sig| sig.iter().for_each(|(_, sig)| T::recurse(&sig.signal)))
+    }
     fn reset_initial_value(signal: &Self::Signal) {
-        signal.update(|sig| {
-            sig.iter().for_each(|(_, sig)| T::reset_initial_value(&sig.signal));
+        signal.value.update(|value| {
+            value.iter().for_each(|(_, item)| T::reset_initial_value(&item.signal));
         });
     }
     fn with_error<O>(_: &Self::Signal, f: impl FnOnce(Option<&FormError>) -> O) -> O {
@@ -191,13 +218,11 @@ where
 
 impl<T, El, S> FormComponent<Vec<El>> for Vec<T>
 where
-    T: FormComponent<El, Signal = FormFieldSignal<S>>,
+    T: Clone + FormComponent<El, Signal = FormFieldSignal<S>>,
     S: Clone + Eq + 'static + std::fmt::Debug,
     <T as FormField<El>>::Config: std::fmt::Debug,
 {
     fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
-        logging::log!("props={props:#?}");
-
         let (min_items, max_items) = props.config.size.split();
 
         let next_id =
@@ -219,7 +244,7 @@ where
                                 id,
                                 VecSignalItem {
                                     id,
-                                    signal: T::default_signal(),
+                                    signal: T::default_signal(&props.config.item, None),
                                 },
                             );
                             next_id.update(|x| *x += 1);
@@ -245,11 +270,12 @@ where
             remove,
         } = props.config;
 
+        let item_config_clone = item_config.clone();
         view! {
             <div id={props.id} class={props.class} style={props.style}>
                 <For
                     key=|(_, (key, _))| *key
-                    each=move || props.signal.get().value.into_iter().enumerate()
+                    each=move || props.signal.value.get().into_iter().enumerate()
                     children=move |(index, (key, item))| {
                         let id = || index.to_string();
 
@@ -288,7 +314,7 @@ where
                         if !num_items_is_max() {
                             props.signal.update(|items| {
                                 let id = next_id.get_untracked();
-                                items.insert(id, VecSignalItem { id, signal: T::default_signal() });
+                                items.insert(id, VecSignalItem { id, signal: T::default_signal(&item_config_clone, None) });
                                 next_id.update(|x| *x = id + 1);
                             });
                         }
@@ -357,7 +383,7 @@ static ASCII_UPPER: [char; 26] = [
 
 impl<Config: Default> VecConfig<Config> {
     #[allow(clippy::too_many_arguments)]
-    fn wrap<Signal>(
+    fn wrap<Signal: std::fmt::Debug>(
         size: &VecConfigSize,
         item_container_class: Option<Oco<'static, str>>,
         item_label: Option<&VecItemLabel>,
@@ -367,6 +393,9 @@ impl<Config: Default> VecConfig<Config> {
         id: Oco<'static, str>,
         item: impl IntoView,
     ) -> impl IntoView {
+        // use leptos::ev::MouseEvent;
+        // use wasm_bindgen::{JsCast, UnwrapThrowExt};
+
         let (min_items, _) = size.split();
         let num_items_is_min = move || {
             let num_items = signal.with(|items| items.len());
@@ -376,19 +405,8 @@ impl<Config: Default> VecConfig<Config> {
         let cursor: StyleSignal = Rc::new(move || if num_items_is_min() { None } else { Some("pointer") });
         let opacity: StyleSignal = Rc::new(move || if num_items_is_min() { Some("0.5") } else { None });
 
-        use leptos::ev::MouseEvent;
-        use wasm_bindgen::{JsCast, UnwrapThrowExt};
-        let on_remove = move |ev: MouseEvent| {
+        let on_remove = move |_| {
             if !num_items_is_min() {
-                let target = ev.target().unwrap_throw();
-                let el = target.unchecked_into::<web_sys::Element>();
-                let parent = el.parent_element().unwrap_throw();
-                let id = parent.get_attribute("id");
-                let Some(id) = id else {
-                    logging::debug_warn!("unable to remove component: no id found in parent element");
-                    return;
-                };
-                let key = id.parse::<usize>().unwrap_throw();
                 signal.update(|items| {
                     items.remove(&key);
                 });
@@ -426,7 +444,7 @@ impl<Config: Default> VecConfig<Config> {
         };
 
         view! {
-            <div id={key} class={item_container_class} style="display: flex; flex-direction: row; align-items: center; margin-bottom: 0.5rem">
+            <div class={item_container_class} style="display: flex; flex-direction: row; align-items: center; margin-bottom: 0.5rem">
                 {match item_label {
                     Some(item_label) => item_label.wrap_label(key, id, item, signal),
                     None => item.into_view(),

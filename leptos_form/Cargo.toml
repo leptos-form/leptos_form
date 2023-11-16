@@ -16,11 +16,13 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
+js-sys = { workspace = true, optional = true }
 leptos.workspace = true
 leptos_form_core.workspace = true
 leptos_form_proc_macros.workspace = true
 leptos_router.workspace = true
 wasm-bindgen.workspace = true
+web-sys = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde.workspace = true
@@ -32,6 +34,15 @@ rustc_version = "0.4.0"
 
 [features]
 bigdecimal = ["leptos_form_core/bigdecimal"]
+cache-local-storage = [
+  "js-sys",
+  "leptos_form_core/cache-local-storage",
+  "web-sys",
+  "web-sys/Storage",
+]
+cache-serde_json = [
+  "leptos_form_core/cache-serde_json",
+]
 chrono = ["leptos_form_core/chrono"]
 num-bigint = ["leptos_form_core/num-bigint"]
 uuid = ["leptos_form_core/uuid"]

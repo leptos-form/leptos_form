@@ -44,6 +44,7 @@ If specified, a leptos component can be produced for this type which will render
 | Attribute           | description                                                                                                                                             | Type                                 | Optional |
 |---------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------|----------|
 | action              | Leptos action configuration for this form                                                                                                               | [action](#action-attribute)          | Y        |
+| cache               | Cache configuration for this form                                                                                                                       | [cache](#cache-attribute)            | Y        |
 | class               | `class` property set on the wrapping \<Form\> element                                                                                                   | string                               | Y        |
 | field_changed_class | An additional class to be appended to the containing element of any field whose value has changed                                                       | string                               | Y        |
 | map_submit          | Maps this type given its initial and current values into another type which will then be passed to the provided action                                  | [`MapSubmit`]                        | Y        |
@@ -80,11 +81,20 @@ An action can be specified one of two ways:
   We parse the form first into the deriving struct (i.e. the type [`macro@Form`] is derived on) and then either submit it to the server function or pass it to `map_submit` if specified.
   This allows us to keeps the internals of state managament in the form completely separate from representation of the form's data.
 
+## Cache attribute
+Forms can be configured to cache their serialized values, debouncing after any changes occur in the form.
+
+| Attribute   | decsription                                                                                                                                                                   | Type       | Optional |
+|-------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|----------|
+| debounce_ms | How long to wait after most recent change until serializing form and writing it to cache (defaults to 1500)                                                                   | number     | Y        |
+| key         | Name of serialized item in cache (defaults to `format!("{url domain}{url path}#{form id}")`, omitting the `#{form id}` if no form id is provided)                             | string     | Y        |
+| value       | An expression evaluating to a type which implements [`Cache`](cache::Cache). For JSON local storage, `leptos_form::cache::LocalStorage(leptos_form::cache::SerdeJson))`.  | expression | N        |
+
 ## Container attributes
 Specifies a containing element to contain wrap children.
 
 | Attribute | description                                       | Optional                                                                                               |
-| ----------|---------------------------------------------------|--------------------------------------------------------------------------------------------------------|
+|-----------|---------------------------------------------------|--------------------------------------------------------------------------------------------------------|
 | tag       | The html tag to use for the wrapping html element | N (Y if used in the context of an adjacent field label and the form also has a default adjacent label) |
 | id        | `id` property set on the wrapping html element    | Y                                                                                                      |
 | class     | `class` property set on the wrapping html element | Y                                                                                                      |

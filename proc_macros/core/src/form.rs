@@ -58,6 +58,7 @@ struct ComponentConfigSpanned {
 #[derive(Clone, Debug, Default, FromMeta)]
 struct ComponentConfig {
     action: Option<Action>,
+    cache: Option<Cache>,
     class: Option<StringExpr>,
     field_changed_class: Option<StringExpr>,
     map_submit: Option<MapSubmit>,
@@ -65,7 +66,6 @@ struct ComponentConfig {
     on_error: Option<syn::Expr>,
     on_success: Option<syn::Expr>,
     reset_on_success: Option<bool>,
-    submit: Option<syn::Expr>,
     style: Option<StringExpr>,
 }
 
@@ -211,203 +211,15 @@ enum StringExpr {
     LitStr(String),
 }
 
-impl FromMeta for StringExpr {
-    fn from_expr(expr: &syn::Expr) -> Result<Self, darling::Error> {
-        Ok(match expr {
-            syn::Expr::Lit(syn::ExprLit {
-                lit: syn::Lit::Str(lit_str),
-                ..
-            }) => Self::LitStr(lit_str.value()),
-            _ => Self::Expr(expr.clone()),
-        })
-    }
+#[derive(Clone, Debug, FromMeta)]
+struct Cache {
+    debounce_ms: Option<syn::LitInt>,
+    key: Option<syn::Expr>,
+    value: CacheValue,
 }
 
-impl ToTokens for StringExpr {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        match self {
-            Self::Expr(expr) => tokens.extend(std::iter::once(quote!(#expr))),
-            Self::LitStr(lit_str) => tokens.extend(std::iter::once(quote!(#lit_str))),
-        }
-    }
-}
-
-impl StringExpr {
-    fn map_case(self, case: Case) -> Self {
-        match self {
-            Self::Expr(expr) => Self::Expr(expr),
-            Self::LitStr(lit_str) => Self::LitStr(lit_str.to_case(case)),
-        }
-    }
-
-    fn with_oco(leptos_krate: &syn::Path) -> impl Fn(StringExpr) -> TokenStream + '_ {
-        move |val| match val {
-            Self::Expr(expr) => quote!(#leptos_krate::Oco::Owned(#expr.to_string())),
-            Self::LitStr(lit_str) => quote!(#leptos_krate::Oco::Borrowed(#lit_str)),
-        }
-    }
-}
-
-impl ComponentConfigSpanned {
-    fn span(&self) -> Span {
-        self.field.span()
-    }
-}
-
-impl FromMeta for ComponentConfigSpanned {
-    fn from_meta(meta: &syn::Meta) -> Result<Self, darling::Error> {
-        let field = meta
-            .path()
-            .segments
-            .last()
-            .ok_or_else(|| darling::Error::custom("no path segment found").with_span(&meta.span()))?
-            .ident
-            .clone();
-
-        let spanned = match meta {
-            syn::Meta::Path(_) => Default::default(),
-            syn::Meta::List(_) => ComponentConfig::from_meta(meta)?,
-            syn::Meta::NameValue(_) => {
-                return Err(darling::Error::custom("unexpected name/value meta attribute").with_span(&meta.span()))
-            }
-        };
-
-        Ok(Self { field, spanned })
-    }
-}
-
-impl FromMeta for Action {
-    fn from_expr(expr: &syn::Expr) -> Result<Self, darling::Error> {
-        use darling::Error;
-
-        let parse_fn_call = |expr_call: &syn::ExprCall| -> Result<(syn::Path, syn::Ident), Error> {
-            let server_fn_path = match &*expr_call.func {
-                syn::Expr::Path(expr_path) => expr_path.path.clone(),
-                _ => {
-                    return Err(
-                        Error::custom("action server function must use a path (i.e. cannot be a closure)")
-                            .with_span(&expr_call.func.span()),
-                    )
-                }
-            };
-            let first_arg = expr_call.args.first().ok_or_else(|| {
-                Error::custom("expected an argument to the function call").with_span(&expr_call.args.span())
-            })?;
-            if expr_call.args.len() > 1 {
-                return Err(Error::custom("expected a function call with exactly one argument")
-                    .with_span(&expr_call.args.span()));
-            }
-            let arg = match first_arg {
-                syn::Expr::Path(expr_path) => expr_path
-                    .path
-                    .get_ident()
-                    .ok_or_else(|| Error::custom("only idents are supported here").with_span(&expr_path.span()))?
-                    .clone(),
-                _ => return Err(Error::custom("only idents are supported here").with_span(&first_arg.span())),
-            };
-            Ok((server_fn_path, arg))
-        };
-
-        Ok(match expr {
-            syn::Expr::Call(expr_call) => {
-                let (server_fn_path, arg) = parse_fn_call(expr_call)?;
-                Self::Path {
-                    server_fn_path,
-                    arg,
-                    url: None,
-                }
-            }
-            syn::Expr::Lit(syn::ExprLit {
-                lit: syn::Lit::Str(lit_str),
-                ..
-            }) => Self::Url(lit_str.clone()),
-            syn::Expr::Tuple(expr_tuple) => {
-                if expr_tuple.elems.len() != 2 {
-                    return Err(Error::custom(r#"ActionForm cannot be used without full specification like so: `action = (server_fn_path(data), "/api/url")`"#).with_span(&expr_tuple.elems.span()));
-                }
-                let first = expr_tuple.elems.first().unwrap();
-                let second = expr_tuple.elems.last().unwrap();
-
-                let (server_fn_path, arg) = if let syn::Expr::Call(expr_call) = first {
-                    parse_fn_call(expr_call)
-                } else {
-                    Err(Error::custom("expected a function call expression").with_span(&first.span()))
-                }?;
-
-                let url = if let syn::Expr::Lit(syn::ExprLit {
-                    lit: syn::Lit::Str(lit_str),
-                    ..
-                }) = second
-                {
-                    Ok(lit_str.clone())
-                } else {
-                    Err(Error::custom("expected an endpoint string literal").with_span(&first.span()))
-                }?;
-
-                Self::Path {
-                    server_fn_path,
-                    arg,
-                    url: Some(url),
-                }
-            }
-            _ => {
-                return Err(Error::custom(
-                    "action must be specified with an endpoint string literal or a server fn call expression",
-                ))
-            }
-        })
-    }
-}
-
-impl FromMeta for Element {
-    fn from_meta(meta: &syn::Meta) -> Result<Self, darling::Error> {
-        let ty: syn::Type = match &meta {
-            syn::Meta::List(meta_list) => parse2(meta_list.tokens.clone()).map_err(|_| {
-                darling::Error::custom("expected valid rust type".to_string()).with_span(&meta_list.tokens.span())
-            })?,
-            syn::Meta::Path(_) => {
-                return Err(darling::Error::custom(
-                    "el type unspecified, use `el(leptos::html::HtmlElement<..>)`",
-                ))
-            }
-            syn::Meta::NameValue(_) => {
-                return Err(darling::Error::custom(
-                    "el must be specified using parentheses like `el(leptos::html::HtmlElement<..>)`",
-                )
-                .with_span(&meta.span()))
-            }
-        };
-        Ok(Self(ty))
-    }
-}
-
-impl FromMeta for Groups {
-    fn from_list(items: &[NestedMeta]) -> Result<Self, darling::Error> {
-        Ok(Self(
-            items
-                .iter()
-                .map(|item| match item {
-                    NestedMeta::Meta(meta) => Container::from_meta(meta),
-                    NestedMeta::Lit(lit) => {
-                        Err(darling::Error::custom("expected argument of the form `container(..)`")
-                            .with_span(&lit.span()))
-                    }
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        ))
-    }
-}
-
-impl FromMeta for MapSubmit {
-    fn from_expr(expr: &syn::Expr) -> Result<Self, darling::Error> {
-        use darling::Error;
-        Ok(match expr {
-            syn::Expr::Path(expr_path) => Self::Path(expr_path.path.clone()),
-            syn::Expr::Closure(expr_closure) => Self::Defn(expr_closure.clone()),
-            _ => return Err(Error::custom("expected a path or a closure").with_span(&expr.span())),
-        })
-    }
-}
+#[derive(Clone, Debug)]
+struct CacheValue(syn::Expr);
 
 pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
     let ast: syn::DeriveInput = parse2(tokens)?;
@@ -463,6 +275,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
     let leptos_krate: syn::Path = parse2(quote!(#leptos_form_krate::internal::leptos))?;
     let leptos_router_krate: syn::Path = parse2(quote!(#leptos_form_krate::internal::leptos_router))?;
     let wasm_bindgen_krate: syn::Path = parse2(quote!(#leptos_form_krate::internal::wasm_bindgen))?;
+    let web_sys_krate: syn::Path = parse2(quote!(#leptos_form_krate::internal::web_sys))?;
 
     let fields = data.take_struct().unwrap();
 
@@ -688,6 +501,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             }
             let ComponentConfig {
                 action,
+                cache,
                 class: form_class,
                 field_changed_class,
                 map_submit,
@@ -695,7 +509,6 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 on_error,
                 on_success,
                 reset_on_success,
-                submit,
                 style: form_style,
             } = &component_config.spanned;
 
@@ -703,16 +516,16 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             let id = form_id.iter();
             let class = form_class.iter();
             let style = form_style.iter();
-            let submit = submit.iter();
             let field_changed_class = field_changed_class.iter();
 
             let data_ident = format_ident!("data");
             let action_ident = format_ident!("action");
             let initial_ident = format_ident!("initial");
             let props_signal_ident = format_ident!("signal");
+            let delete_from_cache_ident = cache.is_some().then_some(format_ident!("delete_from_cache"));
             let parse_error_handler_ident = format_ident!("parse_error_handler");
 
-            let props_id = form_id.as_ref().map(|id| quote!(#id)).unwrap_or_else(|| quote!(None));
+            let props_id = form_id.as_ref().map(|id| quote!(#leptos_krate::Oco::Borrowed(#id))).unwrap_or_else(|| quote!(None));
 
             let action = action.as_ref().ok_or_else(||Error::new(
                 Span::call_site(),
@@ -736,6 +549,9 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 quote!()
             };
 
+            let parse_from_signal = quote!(#props_signal_ident.with(|props| <#component_ty as #leptos_form_krate::FormField<#leptos_krate::View>>::try_from_signal(props.signal, &config)));
+
+            let _delete_from_cache_ident = delete_from_cache_ident.iter();
             let (tag_import, action_def, open_tag, close_tag, props_name) = match action {
                 Action::Path { server_fn_path, arg, url } => (
                     quote!(use #leptos_router_krate::Form;),
@@ -752,10 +568,9 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                             Ok::<_, Error>(quote!(#url))
                         })?;
 
-                        quote!(<Form action=#url #(id=#id)* #(class=#class)* #(attr:style=#style)* on:submit=move |ev| {
-                            use #wasm_bindgen_krate::UnwrapThrowExt;
+                        quote!(<Form action=#url #(attr:id=#id)* #(attr:class=#class)* #(attr:style=#style)* on:submit=move |ev| {
                             ev.prevent_default();
-                            let #data_ident = match #props_signal_ident.with(|props| <#component_ty as #leptos_form_krate::FormField<#leptos_krate::View>>::try_from_signal(props.signal, &config)) {
+                            let #data_ident = match #parse_from_signal {
                                 Ok(parsed) => parsed,
                                 Err(err) => return #parse_error_handler_ident(err),
                             };
@@ -763,6 +578,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                             #map_submit
 
                             action.dispatch(#data_ident);
+                            #(#_delete_from_cache_ident())*
                         }>)
                     },
                     quote!(</Form>),
@@ -771,7 +587,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 Action::Url(url) => (
                     quote!(use #leptos_router_krate::Form;),
                     None,
-                    quote!(<Form action=#url #(id=#id)* #(class=#class)* #(attr:style=#style)*>),
+                    quote!(<Form action=#url #(attr:id=#id)* #(attr:class=#class)* #(attr:style=#style)*>),
                     quote!(</Form>),
                     quote!(""),
                 ),
@@ -782,7 +598,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 #leptos_form_krate::RenderProps::builder()
                     .id(#props_id)
                     .name(#props_name)
-                    .signal(initial.clone().into_signal(&config))
+                    .signal(#initial_ident.clone().into_signal(&config, Some(#initial_ident.clone())))
                     .config(config.clone())
                     #(.field_changed_class(#leptos_krate::Oco::Borrowed(#field_changed_class)))*
                     .build()
@@ -795,19 +611,42 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                     true => quote!(
                         #leptos_krate::create_effect({
                             let initial = initial.clone();
-                            move |_| {
-                                if let Some(Ok(_)) = #action_ident.value().get() {
-                                    #config_def
-                                    let new_props = #props_builder;
-                                    #props_signal_ident.update(move |props| *props = new_props);
+                            let action_value = #action_ident.value();
+                            move |prev_value| {
+                                let value = action_value.get();
+                                if let None|Some(Err(_)) = value.as_ref() {
+                                    return None;
+                                }
+                                match prev_value {
+                                    None|Some(None) => {
+                                        #config_def
+                                        let new_props = #props_builder;
+                                        #props_signal_ident.update(move |props| *props = new_props);
+                                        had_reset_called.update(|x| *x = true);
+                                        Some(value)
+                                    },
+                                    Some(Some(prev_value)) => None,
                                 }
                             }
                         });
                     ),
                     false => quote!(
-                        #leptos_krate::create_effect(move |_| {
-                            if let Some(Ok(_)) = #action_ident.value().get() {
-                                #props_signal_ident.with(|props| #ident::reset_initial_value(&props.signal));
+                        #leptos_krate::create_effect({
+                            let action_value = #action_ident.value();
+                            move |prev_value| {
+                                let value = action_value.get();
+                                if let None|Some(Err(_)) = value.as_ref() {
+                                    return None;
+                                }
+                                match prev_value {
+                                    None|Some(None) => {
+                                        #props_signal_ident.with(|props| #ident::reset_initial_value(&props.signal));
+                                        #props_signal_ident.with(|props| #ident::recurse(&props.signal));
+                                        had_reset_called.update(|x| *x = true);
+                                        Some(value)
+                                    },
+                                    Some(Some(prev_value)) => None,
+                                }
                             }
                         });
                     ),
@@ -835,6 +674,124 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 quote!()
             };
 
+            let cache_effects = match cache {
+                Some(Cache { debounce_ms, key, value: CacheValue(cache_value) }) => {
+                    let (form_id_fmt, form_id_in_key) = match form_id.as_ref() {
+                        Some(form_id) => (quote!("{}{}#{}"), quote!(#form_id,)),
+                        None => (quote!("{}{}"), quote!()),
+                    };
+                    let key = key
+                        .as_ref()
+                        .map(|key| quote!(#key))
+                        .unwrap_or_else(|| quote!({
+                            #[cfg(target_arch = "wasm32")]
+                            let key = format!(
+                                #form_id_fmt,
+                                web_sys::window().unwrap_throw().location().host().unwrap_throw(),
+                                #leptos_router_krate::use_route().path(),
+                                #form_id_in_key
+                            );
+
+                            #[cfg(not(target_arch = "wasm32"))]
+                            let key = String::default();
+
+                            key
+                        }));
+
+                    let debounce_ms = debounce_ms.as_ref().map(|x| x.base10_parse::<i32>()).transpose()?.unwrap_or(1500);
+
+                    let cache_effects = quote!(
+                        let cache = std::rc::Rc::new(#cache_value);
+
+                        // read from cache on initial load
+                        #[cfg(target_arch = "wasm32")]
+                        #leptos_krate::create_local_resource(|| (), {
+                            let cache = cache.clone();
+                            let cache_key = #key;
+                            let initial = #initial_ident.clone();
+                            move |_| {
+                                let cache = cache.clone();
+                                let cache_key = cache_key.clone();
+                                let initial = initial.clone();
+                                async move {
+                                    use #leptos_form_krate::cache::Cache;
+                                    let item: #ident = cache.get_item(&cache_key).await.unwrap_throw()?;
+                                    #props_signal_ident.update(|props| {
+                                        props.signal = item.into_signal(&props.config, Some(initial));
+                                    });
+                                    Some(())
+                                }
+                            }
+                        });
+
+                        // write to cache
+                        #[cfg(target_arch = "wasm32")]
+                        let write_to_cache_handle = {
+                            let write_signal = create_rw_signal(0u8);
+                            let write_to_cache_handle = create_rw_signal(0i32);
+
+                            let incr = move || write_signal.update(|x| *x = match *x { u8::MAX => 0, _ => *x + 1 });
+                            let cb: Closure<dyn Fn()> = Closure::new(incr);
+
+                            // update timeout to write to cache
+                            #leptos_krate::create_effect(move |prev_handle| {
+                                let window = #web_sys_krate::window().unwrap_throw();
+                                if let Some(Some(prev_handle)) = prev_handle {
+                                    window.clear_timeout_with_handle(prev_handle);
+                                }
+                                #props_signal_ident.with(|props| #ident::recurse(&props.signal));
+                                let timeout_handle = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                                    &cb.as_ref().unchecked_ref(),
+                                    #debounce_ms,
+                                ).unwrap_throw();
+                                write_to_cache_handle.update(|x| *x = timeout_handle);
+                                Some(timeout_handle)
+                            });
+
+                            let cache = cache.clone();
+                            let cache_key = #key;
+                            #leptos_krate::create_local_resource(write_signal, move |_| {
+                                let cache = cache.clone();
+                                let cache_key = cache_key.clone();
+                                async move {
+                                    use #leptos_form_krate::cache::Cache;
+
+                                    if had_reset_called.get() {
+                                        had_reset_called.update(|x| *x = false);
+                                        return;
+                                    }
+
+                                    let value = #props_signal_ident.with(|props| {
+                                        let config = &props.config;
+                                        #parse_from_signal
+                                    }).unwrap_throw();
+                                    cache.set_item(&cache_key, &value).await.unwrap_throw();
+                                }
+                            });
+
+                            write_to_cache_handle
+                        };
+
+                        // remove from cache on submit
+                        #[cfg(target_arch = "wasm32")]
+                        let #delete_from_cache_ident = {
+                            let cache_key = #key;
+                            move || {
+                                let window = #web_sys_krate::window().unwrap_throw();
+                                let local_storage = window.local_storage().unwrap_throw().unwrap_throw();
+                                local_storage.remove_item(&cache_key).unwrap_throw();
+                                window.clear_timeout_with_handle(write_to_cache_handle.get());
+                            }
+                        };
+
+                        #[cfg(not(target_arch = "wasm32"))]
+                        let #delete_from_cache_ident = || {};
+                    );
+                    cache_effects
+                },
+                _ => quote!()
+            };
+
             let pound = "#".parse::<TokenStream>().unwrap();
             let tokens = quote!(
                 // `leptos::component` fails to compile if the return type of the component function
@@ -846,19 +803,28 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 mod #mod_ident {
                     use super::*;
                     use #leptos_krate::IntoView;
+                    use #wasm_bindgen_krate::{closure::Closure, JsCast, UnwrapThrowExt};
 
                     #[allow(unused_imports)]
                     #pound[#leptos_krate::#component_ident]
-                    #vis fn #component_name(#initial_ident: #ident) -> impl IntoView {
+                    #vis fn #component_name(
+                        mut #initial_ident: #ident,
+                        #[prop(optional, into)] top: Option<#leptos_form_krate::components::LeptosFormChildren>,
+                        #[prop(optional, into)] bottom: Option<#leptos_form_krate::components::LeptosFormChildren>,
+                    ) -> impl IntoView {
                         use #leptos_form_krate::{FormField, components::FormSubmissionHandler};
                         use #leptos_krate::{IntoAttribute, IntoView, SignalGet, SignalUpdate, SignalWith};
-                        use ::std::rc::Rc;
+                        use #wasm_bindgen_krate::UnwrapThrowExt;
                         #tag_import
+                        use ::std::rc::Rc;
 
                         #(#action_def)*
                         #config_def
 
                         let #props_signal_ident = #leptos_krate::create_rw_signal(#props_builder);
+
+                        let had_reset_called = #leptos_krate::create_rw_signal(false);
+                        #cache_effects
 
                         let #parse_error_handler_ident = |err: #leptos_form_krate::FormError| #leptos_krate::logging::debug_warn!("{err}");
 
@@ -868,8 +834,9 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
                         #leptos_krate::view! {
                             #open_tag
+                                {top.map(|x| (x.0)())}
                                 {move || #leptos_krate::view! { <FormField props=#props_signal_ident.get() ty=ty /> }}
-                                #({#leptos_krate::#submit})*
+                                {bottom.map(|x| (x.0)())}
                                 #form_submission_handler
                             #close_tag
                         }
@@ -957,25 +924,38 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             type Config = #config_ty;
             type Signal = #signal_ty;
 
-            fn default_signal() -> Self::Signal {
-                #signal_ty {
-                    #(#field_axs: <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::default_signal() ,)*
+            fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal {
+                match initial {
+                    Some(initial) => #signal_ty {
+                        #(#field_axs: <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::default_signal(&config.#field_axs, Some(initial.#field_axs)) ,)*
+                    },
+                    None => #signal_ty {
+                        #(#field_axs: <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::default_signal(&config.#field_axs, None) ,)*
+                    },
                 }
             }
-            fn is_default_value(signal: &Self::Signal) -> bool {
+            fn is_initial_value(signal: &Self::Signal) -> bool {
                 true #(&&
-                    <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::is_default_value(&signal.#field_axs)
+                    <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::is_initial_value(&signal.#field_axs)
                 )*
             }
-            fn into_signal(self, #config_var_ident: &Self::Config) -> Self::Signal {
-                #signal_ty {
-                    #(#field_axs: <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::into_signal(self.#field_axs, &#config_var_ident.#field_axs) ,)*
+            fn into_signal(self, #config_var_ident: &Self::Config, initial: Option<Self>) -> Self::Signal {
+                match initial {
+                    Some(initial) => #signal_ty {
+                        #(#field_axs: <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::into_signal(self.#field_axs, &#config_var_ident.#field_axs, Some(initial.#field_axs)) ,)*
+                    },
+                    None => #signal_ty {
+                        #(#field_axs: <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::into_signal(self.#field_axs, &#config_var_ident.#field_axs, None) ,)*
+                    },
                 }
             }
             fn try_from_signal(signal: Self::Signal, #config_var_ident: &Self::Config) -> Result<Self, #leptos_form_krate::FormError> {
                 Ok(#ident {
                     #(#field_axs: <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::try_from_signal(signal.#field_axs, &#config_var_ident.#field_axs)? ,)*
                 })
+            }
+            fn recurse(signal: &Self::Signal) {
+                #(<#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::recurse(&signal.#field_axs);)*
             }
             fn reset_initial_value(signal: &Self::Signal) {
                 #(<#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::reset_initial_value(&signal.#field_axs);)*
@@ -1261,6 +1241,222 @@ fn wrap_field(
             </label>
         ),
     })
+}
+
+impl FromMeta for StringExpr {
+    fn from_expr(expr: &syn::Expr) -> Result<Self, darling::Error> {
+        Ok(match expr {
+            syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(lit_str),
+                ..
+            }) => Self::LitStr(lit_str.value()),
+            _ => Self::Expr(expr.clone()),
+        })
+    }
+}
+
+impl ToTokens for StringExpr {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            Self::Expr(expr) => tokens.extend(std::iter::once(quote!(#expr))),
+            Self::LitStr(lit_str) => tokens.extend(std::iter::once(quote!(#lit_str))),
+        }
+    }
+}
+
+impl StringExpr {
+    fn map_case(self, case: Case) -> Self {
+        match self {
+            Self::Expr(expr) => Self::Expr(expr),
+            Self::LitStr(lit_str) => Self::LitStr(lit_str.to_case(case)),
+        }
+    }
+
+    fn with_oco(leptos_krate: &syn::Path) -> impl Fn(StringExpr) -> TokenStream + '_ {
+        move |val| match val {
+            Self::Expr(expr) => quote!(#leptos_krate::Oco::Owned(#expr.to_string())),
+            Self::LitStr(lit_str) => quote!(#leptos_krate::Oco::Borrowed(#lit_str)),
+        }
+    }
+}
+
+impl ComponentConfigSpanned {
+    fn span(&self) -> Span {
+        self.field.span()
+    }
+}
+
+impl FromMeta for ComponentConfigSpanned {
+    fn from_meta(meta: &syn::Meta) -> Result<Self, darling::Error> {
+        let field = meta
+            .path()
+            .segments
+            .last()
+            .ok_or_else(|| darling::Error::custom("no path segment found").with_span(&meta.span()))?
+            .ident
+            .clone();
+
+        let spanned = match meta {
+            syn::Meta::Path(_) => Default::default(),
+            syn::Meta::List(_) => ComponentConfig::from_meta(meta)?,
+            syn::Meta::NameValue(_) => {
+                return Err(darling::Error::custom("unexpected name/value meta attribute").with_span(&meta.span()))
+            }
+        };
+
+        Ok(Self { field, spanned })
+    }
+}
+
+impl FromMeta for Action {
+    fn from_expr(expr: &syn::Expr) -> Result<Self, darling::Error> {
+        use darling::Error;
+
+        let parse_fn_call = |expr_call: &syn::ExprCall| -> Result<(syn::Path, syn::Ident), Error> {
+            let server_fn_path = match &*expr_call.func {
+                syn::Expr::Path(expr_path) => expr_path.path.clone(),
+                _ => {
+                    return Err(
+                        Error::custom("action server function must use a path (i.e. cannot be a closure)")
+                            .with_span(&expr_call.func.span()),
+                    )
+                }
+            };
+            let first_arg = expr_call.args.first().ok_or_else(|| {
+                Error::custom("expected an argument to the function call").with_span(&expr_call.args.span())
+            })?;
+            if expr_call.args.len() > 1 {
+                return Err(Error::custom("expected a function call with exactly one argument")
+                    .with_span(&expr_call.args.span()));
+            }
+            let arg = match first_arg {
+                syn::Expr::Path(expr_path) => expr_path
+                    .path
+                    .get_ident()
+                    .ok_or_else(|| Error::custom("only idents are supported here").with_span(&expr_path.span()))?
+                    .clone(),
+                _ => return Err(Error::custom("only idents are supported here").with_span(&first_arg.span())),
+            };
+            Ok((server_fn_path, arg))
+        };
+
+        Ok(match expr {
+            syn::Expr::Call(expr_call) => {
+                let (server_fn_path, arg) = parse_fn_call(expr_call)?;
+                Self::Path {
+                    server_fn_path,
+                    arg,
+                    url: None,
+                }
+            }
+            syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(lit_str),
+                ..
+            }) => Self::Url(lit_str.clone()),
+            syn::Expr::Tuple(expr_tuple) => {
+                if expr_tuple.elems.len() != 2 {
+                    return Err(Error::custom(r#"ActionForm cannot be used without full specification like so: `action = (server_fn_path(data), "/api/url")`"#).with_span(&expr_tuple.elems.span()));
+                }
+                let first = expr_tuple.elems.first().unwrap();
+                let second = expr_tuple.elems.last().unwrap();
+
+                let (server_fn_path, arg) = if let syn::Expr::Call(expr_call) = first {
+                    parse_fn_call(expr_call)
+                } else {
+                    Err(Error::custom("expected a function call expression").with_span(&first.span()))
+                }?;
+
+                let url = if let syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(lit_str),
+                    ..
+                }) = second
+                {
+                    Ok(lit_str.clone())
+                } else {
+                    Err(Error::custom("expected an endpoint string literal").with_span(&first.span()))
+                }?;
+
+                Self::Path {
+                    server_fn_path,
+                    arg,
+                    url: Some(url),
+                }
+            }
+            _ => {
+                return Err(Error::custom(
+                    "action must be specified with an endpoint string literal or a server fn call expression",
+                ))
+            }
+        })
+    }
+}
+
+impl FromMeta for Element {
+    fn from_meta(meta: &syn::Meta) -> Result<Self, darling::Error> {
+        let ty: syn::Type = match &meta {
+            syn::Meta::List(meta_list) => parse2(meta_list.tokens.clone()).map_err(|_| {
+                darling::Error::custom("expected valid rust type".to_string()).with_span(&meta_list.tokens.span())
+            })?,
+            syn::Meta::Path(_) => {
+                return Err(darling::Error::custom(
+                    "el type unspecified, use `el(leptos::html::HtmlElement<..>)`",
+                ))
+            }
+            syn::Meta::NameValue(_) => {
+                return Err(darling::Error::custom(
+                    "el must be specified using parentheses like `el(leptos::html::HtmlElement<..>)`",
+                )
+                .with_span(&meta.span()))
+            }
+        };
+        Ok(Self(ty))
+    }
+}
+
+impl FromMeta for Groups {
+    fn from_list(items: &[NestedMeta]) -> Result<Self, darling::Error> {
+        Ok(Self(
+            items
+                .iter()
+                .map(|item| match item {
+                    NestedMeta::Meta(meta) => Container::from_meta(meta),
+                    NestedMeta::Lit(lit) => {
+                        Err(darling::Error::custom("expected argument of the form `container(..)`")
+                            .with_span(&lit.span()))
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        ))
+    }
+}
+
+impl FromMeta for MapSubmit {
+    fn from_expr(expr: &syn::Expr) -> Result<Self, darling::Error> {
+        use darling::Error;
+        Ok(match expr {
+            syn::Expr::Path(expr_path) => Self::Path(expr_path.path.clone()),
+            syn::Expr::Closure(expr_closure) => Self::Defn(expr_closure.clone()),
+            _ => return Err(Error::custom("expected a path or a closure").with_span(&expr.span())),
+        })
+    }
+}
+
+impl FromMeta for CacheValue {
+    fn from_meta(meta: &syn::Meta) -> Result<Self, darling::Error> {
+        let expr: syn::Expr = match &meta {
+            syn::Meta::List(meta_list) => parse2(meta_list.tokens.clone()).map_err(|_| {
+                darling::Error::custom("expected valid rust type".to_string()).with_span(&meta_list.tokens.span())
+            })?,
+            syn::Meta::Path(_) => return Err(darling::Error::custom("ty must be specified, use `ty(..)`")),
+            syn::Meta::NameValue(_) => {
+                return Err(darling::Error::custom(
+                    "ty must be specified using parentheses like `ty(leptos::html::HtmlElement<..>)`",
+                )
+                .with_span(&meta.span()))
+            }
+        };
+        Ok(Self(expr))
+    }
 }
 
 impl From<LabelCase> for Case {
@@ -1850,11 +2046,11 @@ mod test {
                         count: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
                     }
                 }
-                fn is_default_value(signal: &Self::Signal) -> bool {
-                    true && <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.id) &&
-                    <String as #leptos_form_krate::FormField<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.slug) &&
-                    <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.created_at) &&
-                    <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.count)
+                fn is_initial_value(signal: &Self::Signal) -> bool {
+                    true && <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.id) &&
+                    <String as #leptos_form_krate::FormField<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.slug) &&
+                    <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.created_at) &&
+                    <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.count)
                 }
                 fn into_signal(self, config: &Self::Config) -> Self::Signal {
                     __MyFormDataSignal {
@@ -2071,9 +2267,9 @@ mod test {
                         zz: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
                     }
                 }
-                fn is_default_value(signal: &Self::Signal) -> bool {
-                    true && <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.abc_123) &&
-                    <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.zz)
+                fn is_initial_value(signal: &Self::Signal) -> bool {
+                    true && <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.abc_123) &&
+                    <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.zz)
                 }
                 fn into_signal(self, config: &Self::Config) -> Self::Signal {
                     __MyFormDataSignal {
@@ -2182,9 +2378,9 @@ mod test {
             }
         );
 
-        let leptos_krate = quote!(::leptos_form::internal::leptos);
-        let leptos_router_krate = quote!(::leptos_form::internal::leptos_router);
         let leptos_form_krate = quote!(::leptos_form);
+        let leptos_krate = quote!(#leptos_form_krate::internal::leptos);
+        let leptos_router_krate = quote!(#leptos_form_krate::internal::leptos_router);
 
         let expected = quote!(
             #[derive(Clone, Copy, Debug)]
@@ -2222,8 +2418,8 @@ mod test {
                         ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
                     }
                 }
-                fn is_default_value(signal: &Self::Signal) -> bool {
-                    true && <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.ayo)
+                fn is_initial_value(signal: &Self::Signal) -> bool {
+                    true && <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.ayo)
                 }
                 fn into_signal(self, config: &Self::Config) -> Self::Signal {
                     __MyFormDataSignal {
@@ -2361,9 +2557,10 @@ mod test {
         );
 
         // use internal for this test
-        let leptos_krate = quote!(crate::internal::leptos);
-        let leptos_router_krate = quote!(crate::internal::leptos_router);
         let leptos_form_krate = quote!(crate);
+        let leptos_krate = quote!(#leptos_form_krate::internal::leptos);
+        let leptos_router_krate = quote!(#leptos_form_krate::internal::leptos_router);
+        let wasm_bindgen_krate = quote!(#leptos_form_krate::internal::wasm_bindgen);
 
         let expected = quote!(
             #[derive(Clone, Copy, Debug)]
@@ -2401,8 +2598,8 @@ mod test {
                         ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(),
                     }
                 }
-                fn is_default_value(signal: &Self::Signal) -> bool {
-                    true && <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.ayo)
+                fn is_initial_value(signal: &Self::Signal) -> bool {
+                    true && <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.ayo)
                 }
                 fn into_signal(self, config: &Self::Config) -> Self::Signal {
                     __MyFormDataSignal {
@@ -2471,8 +2668,9 @@ mod test {
                 pub fn MyFormData(initial: MyFormData) -> impl IntoView {
                     use #leptos_form_krate::{FormField, components::FormSubmissionHandler};
                     use #leptos_krate::{IntoAttribute, IntoView, SignalGet, SignalUpdate, SignalWith};
-                    use ::std::rc::Rc;
                     use #leptos_router_krate::Form;
+                    use #wasm_bindgen_krate::UnwrapThrowExt;
+                    use ::std::rc::Rc;
 
                     fn server_fn_inference<T: Clone, U>(f: impl Fn(T) -> U) -> impl Fn(&T) -> U {
                         move |data: &T| f(data.clone())
@@ -2486,7 +2684,7 @@ mod test {
                     let signal = #leptos_krate::create_rw_signal(#leptos_form_krate::RenderProps::builder()
                         .id(None)
                         .name(#leptos_krate::Oco::Borrowed("my_form_data"))
-                        .signal(initial.clone().into_signal(&config))
+                        .signal(initial.clone().into_signal(&config, None))
                         .config(config.clone())
                         .build()
                     );
@@ -2501,7 +2699,7 @@ mod test {
                                 let new_props = #leptos_form_krate::RenderProps::builder()
                                     .id(None)
                                     .name(#leptos_krate::Oco::Borrowed("my_form_data"))
-                                    .signal(initial.clone().into_signal(&config))
+                                    .signal(initial.clone().into_signal(&config, None))
                                     .config(config.clone())
                                     .build();
                                 signal.update(move |props| *props = new_props);
@@ -2513,7 +2711,6 @@ mod test {
                         <Form
                             action="/api/my_server_fn"
                             on:submit=move |ev| {
-                                use crate::internal::wasm_bindgen::UnwrapThrowExt;
                                 ev.prevent_default();
                                 let data = match signal.with(|props| <MyFormData as #leptos_form_krate::FormField<#leptos_krate::View>>::try_from_signal(props.signal, &config)) {
                                     Ok(parsed) => parsed,

@@ -4,7 +4,6 @@ pub use impls::*;
 
 use crate::*;
 use ::leptos::*;
-use ::wasm_bindgen::JsValue;
 
 pub use form_field_component::FormField;
 
@@ -34,10 +33,11 @@ pub trait FormField<El>: Sized {
     /// A RwSignal or wrapper type containing RwSignals which contains the underlying form value.
     type Signal: Clone + 'static;
 
-    fn default_signal() -> Self::Signal;
-    fn is_default_value(signal: &Self::Signal) -> bool;
-    fn into_signal(self, config: &Self::Config) -> Self::Signal;
+    fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal;
+    fn is_initial_value(signal: &Self::Signal) -> bool;
+    fn into_signal(self, config: &Self::Config, initial: Option<Self>) -> Self::Signal;
     fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError>;
+    fn recurse(signal: &Self::Signal);
     fn reset_initial_value(signal: &Self::Signal);
     fn validate(_: Self::Signal) -> Result<(), FormError> {
         Ok(())
@@ -78,25 +78,20 @@ pub struct RenderProps<T: 'static, Config = ()> {
     pub config: Config,
 }
 
-/// Signal type which holds a [`FormFieldSignalValue`].
-#[derive(AsRef, AsMut, Debug, Deref, DerefMut, Derivative, From, Into)]
-#[derivative(Clone(bound = ""), Copy(bound = ""))]
-pub struct FormFieldSignal<T: 'static>(pub RwSignal<FormFieldSignalValue<T>>);
-
-/// A signal value holding a current state, an initial state, and possibly an error.
-#[derive(Clone, Debug, Default, Deref, DerefMut)]
-pub struct FormFieldSignalValue<T> {
+/// A wrapper holding a signal for a current state, an initial state, and possibly an error.
+#[derive(Debug, Deref, DerefMut, Derivative, TypedBuilder)]
+#[derivative(Copy(bound = ""), Clone(bound = ""))]
+pub struct FormFieldSignal<T: 'static> {
     #[deref]
     #[deref_mut]
-    pub value: T,
-    pub initial: Option<T>,
-    pub error: Option<FormError>,
+    pub value: RwSignal<T>,
+    pub initial: RwSignal<Option<T>>,
+    pub error: RwSignal<Option<FormError>>,
 }
 
-impl<T: PartialEq + 'static, Config> RenderProps<FormFieldSignal<T>, Config> {
+impl<T: PartialEq + 'static + std::fmt::Debug, Config> RenderProps<FormFieldSignal<T>, Config> {
     pub fn class_signal(&self) -> RwSignal<Option<Oco<'static, str>>> {
         let signal = self.signal;
-        let initial_has_changed = signal.has_changed();
         let class = self.class.clone();
         let field_changed_class = match (class.clone(), self.field_changed_class.clone()) {
             (Some(class), Some(field_changed_class)) => Some(Oco::Owned(format!("{class} {field_changed_class}"))),
@@ -105,40 +100,41 @@ impl<T: PartialEq + 'static, Config> RenderProps<FormFieldSignal<T>, Config> {
             (None, None) => None,
         };
 
-        let compute_class = move |has_changed| match field_changed_class.clone() {
+        let compute_class = std::rc::Rc::new(move |has_changed| match field_changed_class.clone() {
             Some(field_changed_class) => match has_changed {
                 false => class.clone(),
                 true => Some(field_changed_class),
             },
             None => class.clone(),
-        };
+        });
 
-        let class_signal = create_rw_signal(compute_class(initial_has_changed));
+        // intially render class assuming no changes have been made, otherwise
+        // all fields will flash the field changed class on first render
+        let class_signal = create_rw_signal(compute_class(false));
 
-        create_effect(move |prev_has_changed| {
-            let has_changed = signal.has_changed();
-            if has_changed != prev_has_changed.unwrap_or(initial_has_changed) {
-                class_signal.update(|x| *x = compute_class(has_changed));
+        create_render_effect({
+            let compute_class = compute_class.clone();
+            move |prev_has_changed| {
+                let has_changed = signal.has_changed();
+                if has_changed != prev_has_changed.unwrap_or(false) {
+                    class_signal.update(|x| *x = compute_class(has_changed));
+                }
+                has_changed
             }
-            has_changed
         });
 
         class_signal
     }
 }
 
-impl<T: PartialEq + 'static> FormFieldSignal<T> {
+impl<T: PartialEq + 'static + std::fmt::Debug> FormFieldSignal<T> {
     pub fn has_changed(&self) -> bool {
-        self.0.with(|sig| sig.has_changed())
-    }
-}
-
-impl<T: PartialEq> FormFieldSignalValue<T> {
-    pub fn has_changed(&self) -> bool {
-        match self.initial.as_ref() {
-            Some(initial) => *initial != self.value,
-            None => true,
-        }
+        self.value.with(|value| {
+            self.initial.with(|initial| match initial {
+                Some(initial) => *initial != *value,
+                None => true,
+            })
+        })
     }
 }
 
@@ -153,23 +149,26 @@ where
     type Config = T::Config;
     type Signal = T::Signal;
 
-    fn default_signal() -> Self::Signal {
-        T::default_signal()
+    fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal {
+        T::default_signal(config, initial.flatten())
     }
-    fn is_default_value(signal: &Self::Signal) -> bool {
-        T::is_default_value(signal)
+    fn is_initial_value(signal: &Self::Signal) -> bool {
+        T::is_initial_value(signal)
     }
-    fn into_signal(self, config: &Self::Config) -> Self::Signal {
+    fn into_signal(self, config: &Self::Config, initial: Option<Self>) -> Self::Signal {
         match self {
-            Some(value) => T::into_signal(value, config),
-            None => T::default_signal(),
+            Some(value) => T::into_signal(value, config, initial.flatten()),
+            None => T::default_signal(config, initial.flatten()),
         }
     }
     fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError> {
-        match Self::is_default_value(&signal) {
+        match Self::is_initial_value(&signal) {
             true => Ok(None),
             false => Ok(Some(T::try_from_signal(signal, config)?)),
         }
+    }
+    fn recurse(signal: &Self::Signal) {
+        T::recurse(signal)
     }
     fn reset_initial_value(signal: &Self::Signal) {
         T::reset_initial_value(signal);
@@ -191,27 +190,33 @@ where
     }
 }
 
-impl<T: Default + 'static> Default for FormFieldSignal<T> {
+impl<T: Clone + Default + 'static> Default for FormFieldSignal<T> {
     fn default() -> Self {
-        Self(create_rw_signal(Default::default()))
+        let default = T::default();
+        Self {
+            value: create_rw_signal(default.clone()),
+            initial: create_rw_signal(Some(default)),
+            error: create_rw_signal(None),
+        }
     }
 }
 
-impl<T: Clone + 'static> From<T> for FormFieldSignal<T> {
-    fn from(value: T) -> Self {
-        Self(create_rw_signal(FormFieldSignalValue {
-            initial: Some(value.clone()),
-            value,
-            error: None,
-        }))
+impl<T: std::fmt::Debug + 'static> FormFieldSignal<T> {
+    fn new(value: T, initial: Option<T>) -> Self {
+        Self {
+            value: create_rw_signal(value),
+            error: create_rw_signal(Default::default()),
+            initial: create_rw_signal(initial),
+        }
     }
 }
 
-impl<T> From<FormFieldSignalValue<T>> for JsValue
-where
-    JsValue: From<T>,
-{
-    fn from(value: FormFieldSignalValue<T>) -> JsValue {
-        JsValue::from(value.value)
+impl<T: Default + 'static> FormFieldSignal<T> {
+    fn new_with_default_value(initial: Option<T>) -> Self {
+        Self {
+            value: create_rw_signal(Default::default()),
+            error: create_rw_signal(Default::default()),
+            initial: create_rw_signal(initial),
+        }
     }
 }

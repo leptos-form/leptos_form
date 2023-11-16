@@ -22,6 +22,14 @@ impl<I: 'static, T: Clone + 'static, IV: IntoView + 'static, F> OnSuccess<I, T, 
 {
 }
 
+pub struct LeptosFormChildren(pub Rc<dyn Fn() -> View + 'static>);
+
+impl<T: IntoView, F: Fn() -> T + 'static> From<F> for LeptosFormChildren {
+    fn from(f: F) -> Self {
+        Self(Rc::new(move || <T as IntoView>::into_view(f())))
+    }
+}
+
 #[component]
 pub fn FormSubmissionHandler<IV1: IntoView + 'static, IV2: IntoView + 'static, I: 'static, T: Clone + 'static>(
     action: Action<I, Result<T, ServerFnError>>,
@@ -64,6 +72,7 @@ pub type StyleSignal = Rc<dyn Fn() -> Option<&'static str>>;
 #[component]
 pub fn MaterialIcon(
     d: &'static str,
+    #[prop(optional_no_strip, into)] id: Option<Oco<'static, str>>,
     #[prop(optional_no_strip, into)] class: Option<Oco<'static, str>>,
     #[prop(optional_no_strip, into)] cursor: Option<StyleSignal>,
     #[prop(optional_no_strip, into)] height: Option<usize>,
@@ -82,7 +91,8 @@ pub fn MaterialIcon(
     let opacity = move || opacity.clone().and_then(|x| x());
     view! {
         <svg
-            class={class}
+            id=id
+            class=class
             xmlns="http://www.w3.org/2000/svg"
             height="24"
             width="24"
@@ -90,7 +100,7 @@ pub fn MaterialIcon(
             fill="currentColor"
             style:cursor=cursor
             style:opacity=opacity
-            style={style}
+            style=style
         >
             <path d={d} />
         </svg>
@@ -127,6 +137,7 @@ fn svg_transform(
 
 #[component]
 pub fn MaterialClose(
+    #[prop(optional_no_strip, into)] id: Option<Oco<'static, str>>,
     #[prop(optional_no_strip, into)] class: Option<Oco<'static, str>>,
     #[prop(optional_no_strip, into)] cursor: Option<StyleSignal>,
     #[prop(optional_no_strip, into)] height: Option<usize>,
@@ -136,6 +147,7 @@ pub fn MaterialClose(
 ) -> impl IntoView {
     view! {
         <MaterialIcon
+            id=id
             class=class
             cursor=cursor
             d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"
