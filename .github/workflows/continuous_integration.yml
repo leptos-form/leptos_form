@@ -50,6 +50,7 @@ jobs:
 
     - name: Codecov
       uses: codecov/codecov-action@v4-beta
+      continue-on-error: true
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       with:
@@ -57,4 +58,4 @@ jobs:
         # token: # optional
         # Specify whether the Codecov output should be verbose
         verbose: true
-        fail_ci_if_error: true
+        fail_ci_if_error: false
