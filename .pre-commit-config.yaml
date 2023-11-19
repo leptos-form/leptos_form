@@ -48,21 +48,21 @@ repos:
         args:
         - machete
         language: system
-        types: [rust]
-        always_run: true
+        types: [file]
+        files: (\.rs|Cargo\.toml)$
         pass_filenames: false
 
       - id: cargo-deny
         name: cargo-deny
         description: Cargo plugin for linting your dependencies
-        stages: [push]
+        stages: [commit, push]
         entry: cargo
         args:
         - deny
         - check
         language: system
-        types: [rust]
-        always_run: true
+        types: [file]
+        files: Cargo\.toml$
         pass_filenames: false
 
       - id: cargo-clippy
@@ -78,8 +78,8 @@ repos:
         - --allow-dirty
         - --allow-staged
         language: system
-        types: [rust]
-        always_run: true
+        types: [file]
+        files: (\.rs|Cargo\.toml)$
         pass_filenames: false
 
       - id: cargo-clippy
@@ -95,8 +95,8 @@ repos:
         - -D
         - warnings
         language: system
-        types: [rust]
-        always_run: true
+        types: [file]
+        files: (\.rs|Cargo\.toml)$
         pass_filenames: false
 
       - id: cargo-fmt
@@ -117,7 +117,9 @@ repos:
         - -c
         - "RUSTDOCFLAGS=\"-D warnings\" cargo doc --all-features"
         language: system
-        types: [rust]
+        types: [file]
+        files: (\.md|\.rs|Cargo\.toml)$
+        exclude: (CHANGELOG|DEVELOPMENT)\.md$
         pass_filenames: false
 
       - id: cargo-test
@@ -134,6 +136,7 @@ repos:
           cargo test \
           --all-features
         language: system
-        types: [rust]
+        types: [file]
+        files: (\.md|\.rs|Cargo\.toml)$
+        exclude: (CHANGELOG|DEVELOPMENT)\.md$
         pass_filenames: false
-        always_run: false
