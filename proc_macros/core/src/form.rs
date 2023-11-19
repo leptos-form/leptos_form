@@ -572,7 +572,10 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                             ev.prevent_default();
                             let #data_ident = match #parse_from_signal {
                                 Ok(parsed) => parsed,
-                                Err(err) => return #parse_error_handler_ident(err),
+                                Err(err) => {
+                                    #parse_error_handler_ident(err);
+                                    return;
+                                },
                             };
 
                             #map_submit
@@ -2925,7 +2928,10 @@ mod test {
                                 ev.prevent_default();
                                 let data = match signal.with(|props| <MyFormData as #leptos_form_krate::FormField<#leptos_krate::View>>::try_from_signal(props.signal, &config)) {
                                     Ok(parsed) => parsed,
-                                    Err(err) => return parse_error_handler(err),
+                                    Err(err) => {
+                                        parse_error_handler(err);
+                                        return;
+                                    },
                                 };
                                 let data = my_map_submit(#leptos_form_krate::FormDiff { initial: initial.clone(), current: data });
                                 action.dispatch(data);
