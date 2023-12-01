@@ -29,8 +29,8 @@ indexmap = "2"
 inner = "0"
 itertools = "~0.12"
 js-sys = "~0.3"
-leptos = { git = "https://github.com/tlowerison/leptos", rev = "ea2b167" }
-leptos_router = { git = "https://github.com/tlowerison/leptos", rev = "ea2b167" }
+leptos = { git = "https://github.com/leptos-rs/leptos", rev = "ed61ea9" }
+leptos_router = { git = "https://github.com/leptos-rs/leptos", rev = "ed61ea9" }
 num-bigint = { version = "~0.4", default-features = false }
 paste = "~1"
 prettyplease = "0.2"
