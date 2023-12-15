@@ -881,7 +881,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             pound_token: Default::default(),
             style: syn::AttrStyle::Outer,
             bracket_token: Default::default(),
-            meta: parse2(quote!(derive(Clone, Debug, Default)))?,
+            meta: parse2(quote!(derive(Clone, Debug)))?,
         }],
         vis: syn::Visibility::Public(Default::default()),
         struct_token: Default::default(),
@@ -906,6 +906,12 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
         #signal_struct_def
 
         #config_struct_def
+
+        impl Default for #config_ty {
+            fn default() -> Self {
+                Self { #(#field_axs: #configs,)* }
+            }
+        }
 
         impl ::core::convert::AsRef<#signal_ty> for #signal_ty {
             fn as_ref(&self) -> &Self {
@@ -2014,12 +2020,23 @@ mod test {
                 pub count: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Signal,
             }
 
-            #[derive(Clone, Debug, Default)]
+            #[derive(Clone, Debug)]
             pub struct __MyFormDataConfig {
                 pub id: <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::Config,
                 pub slug: <String as #leptos_form_krate::FormField<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::Config,
                 pub created_at: <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::Config,
                 pub count: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config,
+            }
+
+            impl Default for __MyFormDataConfig {
+                fn default() -> Self {
+                    Self {
+                        id: <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
+                        slug: <String as #leptos_form_krate::FormField<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
+                        created_at: <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
+                        count: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
+                    }
+                }
             }
 
             impl ::core::convert::AsRef<__MyFormDataSignal> for __MyFormDataSignal {
@@ -2312,10 +2329,19 @@ mod test {
                 pub zz: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Signal,
             }
 
-            #[derive(Clone, Debug, Default)]
+            #[derive(Clone, Debug)]
             pub struct __MyFormDataConfig {
                 pub abc_123: <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::Config,
                 pub zz: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config,
+            }
+
+            impl Default for __MyFormDataConfig {
+                fn default() -> Self {
+                    Self {
+                        abc_123: <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
+                        zz: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
+                    }
+                }
             }
 
             impl ::core::convert::AsRef<__MyFormDataSignal> for __MyFormDataSignal {
@@ -2513,9 +2539,17 @@ mod test {
                 pub ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Signal,
             }
 
-            #[derive(Clone, Debug, Default)]
+            #[derive(Clone, Debug)]
             pub struct __MyFormDataConfig {
                 pub ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config,
+            }
+
+            impl Default for __MyFormDataConfig {
+                fn default() -> Self {
+                    Self {
+                        ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
+                    }
+                }
             }
 
             impl ::core::convert::AsRef<__MyFormDataSignal> for __MyFormDataSignal {
@@ -2729,9 +2763,17 @@ mod test {
                 pub ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Signal,
             }
 
-            #[derive(Clone, Debug, Default)]
+            #[derive(Clone, Debug)]
             pub struct __MyFormDataConfig {
                 pub ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config,
+            }
+
+            impl Default for __MyFormDataConfig {
+                fn default() -> Self {
+                    Self {
+                        ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::Config::default(),
+                    }
+                }
             }
 
             impl ::core::convert::AsRef<__MyFormDataSignal> for __MyFormDataSignal {
@@ -2975,7 +3017,7 @@ mod test {
             #[derive(Form)]
             #[form(component(action = "/api/my-form-data"))]
             pub struct MyFormData {
-                #[form(config = #leptos_form_krate::NaiveDateTimeConfig { format: "%FT%T" })]
+                #[form(config = #leptos_form_krate::NaiveDateTimeConfig { format: "%c" })]
                 pub created_at: chrono::NaiveDateTime,
             }
         );
@@ -2986,9 +3028,17 @@ mod test {
                 pub created_at: <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::Signal,
             }
 
-            #[derive(Clone, Debug, Default)]
+            #[derive(Clone, Debug)]
             pub struct __MyFormDataConfig {
                 pub created_at: <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::Config,
+            }
+
+            impl Default for __MyFormDataConfig {
+                fn default() -> Self {
+                    Self {
+                        created_at: #leptos_form_krate::NaiveDateTimeConfig { format: "%c" }
+                    }
+                }
             }
 
             impl ::core::convert::AsRef<__MyFormDataSignal> for __MyFormDataSignal {
@@ -3081,7 +3131,7 @@ mod test {
                         .name(_created_at_name.clone())
                         .field_changed_class(props.field_changed_class.clone())
                         .signal(props.signal.created_at.clone())
-                        .config(#leptos_form_krate::NaiveDateTimeConfig { format: "%FT%T" })
+                        .config(#leptos_form_krate::NaiveDateTimeConfig { format: "%c" })
                         .build();
 
                     let _created_at_error = move || <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::with_error(
@@ -3128,7 +3178,7 @@ mod test {
                     use ::std::rc::Rc;
                     let config = __MyFormDataConfig {
                         created_at: #leptos_form_krate::NaiveDateTimeConfig {
-                            format: "%FT%T",
+                            format: "%c",
                         },
                     };
                     let signal = #leptos_krate::create_rw_signal(
