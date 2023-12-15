@@ -162,10 +162,7 @@ where
         }
     }
     fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError> {
-        match Self::is_initial_value(&signal) {
-            true => Ok(None),
-            false => Ok(Some(T::try_from_signal(signal, config)?)),
-        }
+        Ok(Some(T::try_from_signal(signal, config)?))
     }
     fn recurse(signal: &Self::Signal) {
         T::recurse(signal)
