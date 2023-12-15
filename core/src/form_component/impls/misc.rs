@@ -86,33 +86,38 @@ pub mod chrono {
 
     #[derive(Clone, Debug)]
     pub struct NaiveDateConfig {
+        /// defaults to `"%F"`
         pub format: &'static str,
     }
     #[derive(Clone, Debug)]
     pub struct NaiveDateTimeConfig {
+        /// defaults to `"%FT%T"`
         pub format: &'static str,
     }
     #[derive(Clone, Debug)]
     pub struct FixedOffsetDateTimeConfig {
+        /// defaults to `"%+"`
         pub format: &'static str,
     }
     #[derive(Clone, Debug)]
     pub struct UtcDateTimeConfig {
+        /// defaults to `"%+"`
         pub format: &'static str,
     }
     #[derive(Clone, Debug)]
     pub struct LocalDateTimeConfig {
+        /// defaults to `"%FT%T"`
         pub format: &'static str,
     }
 
     impl Default for NaiveDateConfig {
         fn default() -> Self {
-            Self { format: "%x" }
+            Self { format: "%F" }
         }
     }
     impl Default for NaiveDateTimeConfig {
         fn default() -> Self {
-            Self { format: "%c" }
+            Self { format: "%FT%T" }
         }
     }
     impl Default for FixedOffsetDateTimeConfig {
@@ -122,12 +127,12 @@ pub mod chrono {
     }
     impl Default for UtcDateTimeConfig {
         fn default() -> Self {
-            Self { format: "%c" }
+            Self { format: "%+" }
         }
     }
     impl Default for LocalDateTimeConfig {
         fn default() -> Self {
-            Self { format: "%c" }
+            Self { format: "%FT%T" }
         }
     }
 

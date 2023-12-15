@@ -354,7 +354,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             let class = field.class.clone().or_else(|| field_class.clone()).map(StringExpr::with_oco(&leptos_krate)).into_iter();
             let style = field.style.clone().or_else(|| field_style.clone()).map(StringExpr::with_oco(&leptos_krate)).into_iter();
 
-            let config = field.config.clone() .unwrap_or_else(|| parse2(quote!(
+            let config = field.config.clone().unwrap_or_else(|| parse2(quote!(
                 <#field_ty as #leptos_form_krate::FormField<#field_el_ty>>::Config::default()
             )).unwrap());
 
@@ -2946,6 +2946,210 @@ mod test {
                                 success_view_ty={<::std::marker::PhantomData<#leptos_krate::View> as Default>::default()}
                             />
                         </Form>
+                    }
+                }
+            }
+        );
+
+        let output = derive_form(input)?;
+
+        let expected = cleanup(&expected);
+        let output = cleanup(&output);
+
+        let expected = pretty(expected)?;
+        let output = pretty(output)?;
+
+        assert_eq!(expected, output);
+
+        Ok(())
+    }
+
+    #[test]
+    fn custom_config_is_correctly_provided() -> Result<(), Error> {
+        let leptos_form_krate = quote!(::leptos_form);
+        let leptos_krate = quote!(#leptos_form_krate::internal::leptos);
+        let leptos_router_krate = quote!(#leptos_form_krate::internal::leptos_router);
+        let wasm_bindgen_krate = quote!(#leptos_form_krate::internal::wasm_bindgen);
+
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = "/api/my-form-data"))]
+            pub struct MyFormData {
+                #[form(config = #leptos_form_krate::NaiveDateTimeConfig { format: "%FT%T" })]
+                pub created_at: chrono::NaiveDateTime,
+            }
+        );
+
+        let expected = quote!(
+            #[derive(Clone, Copy, Debug)]
+            pub struct __MyFormDataSignal {
+                pub created_at: <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::Signal,
+            }
+
+            #[derive(Clone, Debug, Default)]
+            pub struct __MyFormDataConfig {
+                pub created_at: <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::Config,
+            }
+
+            impl ::core::convert::AsRef<__MyFormDataSignal> for __MyFormDataSignal {
+                fn as_ref(&self) -> &Self {
+                    self
+                }
+            }
+
+            impl ::core::convert::AsMut<__MyFormDataSignal> for __MyFormDataSignal {
+                fn as_mut(&mut self) -> &mut Self {
+                    self
+                }
+            }
+
+            impl #leptos_form_krate::DefaultHtmlElement for MyFormData {
+                type El = #leptos_krate::View;
+            }
+
+            impl #leptos_form_krate::FormField<#leptos_krate::View> for MyFormData {
+                type Config = __MyFormDataConfig;
+                type Signal = __MyFormDataSignal;
+                fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal {
+                    match initial {
+                        Some(initial) => {
+                            __MyFormDataSignal {
+                                created_at: <chrono::NaiveDateTime as ::leptos_form::FormField<
+                                    <chrono::NaiveDateTime as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::default_signal(&config.created_at, Some(initial.created_at)),
+                            }
+                        }
+                        None => {
+                            __MyFormDataSignal {
+                                created_at: <chrono::NaiveDateTime as ::leptos_form::FormField<
+                                    <chrono::NaiveDateTime as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::default_signal(&config.created_at, None),
+                            }
+                        }
+                    }
+                }
+                fn is_initial_value(signal: &Self::Signal) -> bool {
+                    true && <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.created_at)
+                }
+                fn into_signal(self, config: &Self::Config, initial: Option<Self>) -> Self::Signal {
+                    match initial {
+                        Some(initial) => {
+                            __MyFormDataSignal {
+                                created_at: <chrono::NaiveDateTime as ::leptos_form::FormField<
+                                    <chrono::NaiveDateTime as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(
+                                    self.created_at,
+                                    &config.created_at,
+                                    Some(initial.created_at),
+                                ),
+                            }
+                        }
+                        None => {
+                            __MyFormDataSignal {
+                                created_at: <chrono::NaiveDateTime as ::leptos_form::FormField<
+                                    <chrono::NaiveDateTime as ::leptos_form::DefaultHtmlElement>::El,
+                                >>::into_signal(self.created_at, &config.created_at, None),
+                            }
+                        }
+                    }
+                }
+                fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, #leptos_form_krate::FormError> {
+                    Ok(MyFormData {
+                        created_at: <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::try_from_signal(signal.created_at, &config.created_at)?,
+                    })
+                }
+                fn recurse(signal: &Self::Signal) {
+                    <chrono::NaiveDateTime as ::leptos_form::FormField<
+                        <chrono::NaiveDateTime as ::leptos_form::DefaultHtmlElement>::El,
+                    >>::recurse(&signal.created_at);
+                }
+                fn reset_initial_value(signal: &Self::Signal) {
+                    <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::reset_initial_value(&signal.created_at);
+                }
+            }
+
+            impl #leptos_form_krate::FormComponent<#leptos_krate::View> for MyFormData {
+                #[allow(unused_imports)]
+                fn render(props: #leptos_form_krate::RenderProps<Self::Signal, Self::Config>) -> impl #leptos_krate::IntoView {
+                    use #leptos_form_krate::FormField;
+                    use #leptos_krate::{IntoAttribute, IntoView};
+
+                    let _created_at_id = #leptos_form_krate::format_form_id(props.id.as_ref(), #leptos_krate::Oco::Borrowed("created-at"));
+                    let _created_at_name = #leptos_form_krate::format_form_name(props.name.as_ref(), "created_at");
+                    let _created_at_props = #leptos_form_krate::RenderProps::builder()
+                        .id(_created_at_id.clone())
+                        .name(_created_at_name.clone())
+                        .field_changed_class(props.field_changed_class.clone())
+                        .signal(props.signal.created_at.clone())
+                        .config(#leptos_form_krate::NaiveDateTimeConfig { format: "%FT%T" })
+                        .build();
+
+                    let _created_at_error = move || <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::with_error(
+                        &_created_at_props.signal,
+                        |error| match error {
+                            Some(form_error) => {
+                                let error = format!("{form_error}");
+                                #leptos_krate::IntoView::into_view(#leptos_krate::view! { <span style="color: red;">{error}</span> })
+                            },
+                            None => #leptos_krate::View::default(),
+                        },
+                    );
+                    let ty = <::std::marker::PhantomData<(chrono::NaiveDateTime, <chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El)> as Default>::default();
+                    let _created_at_view = #leptos_krate::view! { <FormField props=_created_at_props ty=ty /> };
+
+                    #leptos_krate::view! {
+                        <label for={_created_at_id}>
+                            <div>"created_at"</div>
+                            {_created_at_view}
+                            {_created_at_error}
+                        </label>
+                    }
+                }
+            }
+
+            pub use leptos_form_component_my_form_data::*;
+            mod leptos_form_component_my_form_data {
+                use super::*;
+                use #leptos_krate::IntoView;
+                use #wasm_bindgen_krate::{closure::Closure, JsCast, UnwrapThrowExt,};
+                #[allow(unused_imports)]
+                #[#leptos_krate::component]
+                pub fn MyFormData(
+                    mut initial: MyFormData,
+                    #[prop(optional, into)]
+                    top: Option<#leptos_form_krate::components::LeptosFormChildren>,
+                    #[prop(optional, into)]
+                    bottom: Option<#leptos_form_krate::components::LeptosFormChildren>,
+                ) -> impl IntoView {
+                    use #leptos_form_krate::{FormField, components::FormSubmissionHandler};
+                    use #leptos_krate::{IntoAttribute, IntoView, SignalGet, SignalUpdate, SignalWith,};
+                    use #wasm_bindgen_krate::UnwrapThrowExt;
+                    use #leptos_router_krate::Form;
+                    use ::std::rc::Rc;
+                    let config = __MyFormDataConfig {
+                        created_at: #leptos_form_krate::NaiveDateTimeConfig {
+                            format: "%FT%T",
+                        },
+                    };
+                    let signal = #leptos_krate::create_rw_signal(
+                        #leptos_form_krate::RenderProps::builder()
+                            .id(None)
+                            .name("")
+                            .signal(initial.clone().into_signal(&config, Some(initial.clone())))
+                            .config(config.clone())
+                            .build(),
+                    );
+                    let _had_reset_called = #leptos_krate::create_rw_signal(false);
+                    let parse_error_handler = |err: #leptos_form_krate::FormError| {
+                        #leptos_krate::logging::debug_warn!("{err}")
+                    };
+                    let ty = <::std::marker::PhantomData<
+                        (MyFormData, #leptos_krate::View),
+                    > as Default>::default();
+                    #leptos_krate::view! {
+                        < Form action = "/api/my-form-data" > { top.map(| x | (x.0)()) } { move ||
+                        #leptos_krate::view! { < FormField props =signal.get() ty
+                        = ty / > } } { bottom.map(| x | (x.0) ()) } < / Form >
                     }
                 }
             }
