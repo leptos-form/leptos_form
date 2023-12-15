@@ -943,6 +943,11 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                     },
                 }
             }
+            fn is_default_value(signal: &Self::Signal) -> bool {
+                true #(&&
+                    <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::is_default_value(&signal.#field_axs)
+                )*
+            }
             fn is_initial_value(signal: &Self::Signal) -> bool {
                 true #(&&
                     <#field_tys as #leptos_form_krate::FormField<#field_el_tys>>::is_initial_value(&signal.#field_axs)
@@ -2094,6 +2099,12 @@ mod test {
                         }
                     }
                 }
+                fn is_default_value(signal: &Self::Signal) -> bool {
+                    true && <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.id) &&
+                    <String as #leptos_form_krate::FormField<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.slug) &&
+                    <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.created_at) &&
+                    <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.count)
+                }
                 fn is_initial_value(signal: &Self::Signal) -> bool {
                     true && <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.id) &&
                     <String as #leptos_form_krate::FormField<<String as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.slug) &&
@@ -2388,6 +2399,10 @@ mod test {
                        }
                     }
                 }
+                fn is_default_value(signal: &Self::Signal) -> bool {
+                    true && <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.abc_123) &&
+                    <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.zz)
+                }
                 fn is_initial_value(signal: &Self::Signal) -> bool {
                     true && <Uuid as #leptos_form_krate::FormField<<Uuid as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.abc_123) &&
                     <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.zz)
@@ -2581,6 +2596,9 @@ mod test {
                             ayo: <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::default_signal(&config.ayo, None),
                         },
                     }
+                }
+                fn is_default_value(signal: &Self::Signal) -> bool {
+                    true && <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.ayo)
                 }
                 fn is_initial_value(signal: &Self::Signal) -> bool {
                     true && <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.ayo)
@@ -2813,6 +2831,9 @@ mod test {
                             }
                         }
                     }
+                }
+                fn is_default_value(signal: &Self::Signal) -> bool {
+                    true && <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.ayo)
                 }
                 fn is_initial_value(signal: &Self::Signal) -> bool {
                     true && <u8 as #leptos_form_krate::FormField<<u8 as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.ayo)
@@ -3077,6 +3098,9 @@ mod test {
                             }
                         }
                     }
+                }
+                fn is_default_value(signal: &Self::Signal) -> bool {
+                    true && <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::is_default_value(&signal.created_at)
                 }
                 fn is_initial_value(signal: &Self::Signal) -> bool {
                     true && <chrono::NaiveDateTime as #leptos_form_krate::FormField<<chrono::NaiveDateTime as #leptos_form_krate::DefaultHtmlElement>::El>>::is_initial_value(&signal.created_at)

@@ -20,6 +20,9 @@ mod uuid {
         fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal {
             FormFieldSignal::new_with_default_value(initial.map(|x| x.to_string()))
         }
+        fn is_default_value(signal: &Self::Signal) -> bool {
+            signal.value.with(|value| value.is_empty())
+        }
         fn is_initial_value(signal: &Self::Signal) -> bool {
             signal.value.with(|value| {
                 signal.initial.with(|initial| match initial {
@@ -62,9 +65,13 @@ mod uuid {
                     name={props.name}
                     on:input=move |ev| props.signal.value.update(|value| *value = event_target_value(&ev))
                     on:change=move |_| {
-                        if let Err(form_error) = <Self as FormField<HtmlElement<Input>>>::try_from_signal(props.signal, &props.config) {
-                            props.signal.error.update(|error| *error = Some(form_error));
-                        } else if props.signal.error.with_untracked(|error| error.is_some()) {
+                        if !props.is_optional || !<Self as FormField<HtmlElement<Input>>>::is_default_value(&props.signal) {
+                            if let Err(form_error) = <Self as FormField<HtmlElement<Input>>>::try_from_signal(props.signal, &props.config) {
+                                props.signal.error.update(|error| *error = Some(form_error));
+                            } else if props.signal.error.with_untracked(|error| error.is_some()) {
+                                props.signal.error.update(|error| *error = None);
+                            }
+                        } else {
                             props.signal.error.update(|error| *error = None);
                         }
                     }
@@ -153,6 +160,9 @@ pub mod chrono {
                 fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal {
                     FormFieldSignal::new_with_default_value(initial.map(|x| x.format(config.format).to_string()))
                 }
+                fn is_default_value(signal: &Self::Signal) -> bool {
+                    signal.value.with(|value| value.is_empty())
+                }
                 fn is_initial_value(signal: &Self::Signal) -> bool {
                     signal.value.with(|value| signal.initial.with(|initial| match initial {
                         Some(initial) => initial == value,
@@ -186,9 +196,13 @@ pub mod chrono {
                             name={props.name}
                             on:input=move |ev| props.signal.value.update(|value| *value = event_target_value(&ev))
                             on:change=move |_| {
-                                if let Err(form_error) = <Self as FormField<HtmlElement<Input>>>::try_from_signal(props.signal, &props.config) {
-                                    props.signal.error.update(|error| *error = Some(form_error));
-                                } else if props.signal.error.with_untracked(|error| error.is_some()) {
+                                if !props.is_optional || !Self::is_default_value(&props.signal) {
+                                    if let Err(form_error) = <Self as FormField<HtmlElement<Input>>>::try_from_signal(props.signal, &props.config) {
+                                        props.signal.error.update(|error| *error = Some(form_error));
+                                    } else if props.signal.error.with_untracked(|error| error.is_some()) {
+                                        props.signal.error.update(|error| *error = None);
+                                    }
+                                } else {
                                     props.signal.error.update(|error| *error = None);
                                 }
                             }

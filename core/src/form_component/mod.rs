@@ -34,6 +34,7 @@ pub trait FormField<El>: Sized {
     type Signal: Clone + 'static;
 
     fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal;
+    fn is_default_value(signal: &Self::Signal) -> bool;
     fn is_initial_value(signal: &Self::Signal) -> bool;
     fn into_signal(self, config: &Self::Config, initial: Option<Self>) -> Self::Signal;
     fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError>;
@@ -74,6 +75,8 @@ pub struct RenderProps<T: 'static, Config = ()> {
     pub style: Option<Oco<'static, str>>,
     #[builder(default)]
     pub field_changed_class: Option<Oco<'static, str>>,
+    #[builder(default)]
+    pub is_optional: bool,
     pub signal: T,
     pub config: Config,
 }
@@ -152,6 +155,9 @@ where
     fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal {
         T::default_signal(config, initial.flatten())
     }
+    fn is_default_value(signal: &Self::Signal) -> bool {
+        T::is_default_value(signal)
+    }
     fn is_initial_value(signal: &Self::Signal) -> bool {
         T::is_initial_value(signal)
     }
@@ -162,7 +168,10 @@ where
         }
     }
     fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError> {
-        Ok(Some(T::try_from_signal(signal, config)?))
+        match Self::is_default_value(&signal) {
+            true => Ok(None),
+            false => Ok(Some(T::try_from_signal(signal, config)?)),
+        }
     }
     fn recurse(signal: &Self::Signal) {
         T::recurse(signal)
@@ -182,7 +191,8 @@ impl<El, T> FormComponent<El> for Option<T>
 where
     T: FormComponent<El>,
 {
-    fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
+    fn render(mut props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
+        props.is_optional = true;
         T::render(props)
     }
 }

@@ -155,6 +155,9 @@ where
                 .collect::<IndexMap<_, _>>()
         }))
     }
+    fn is_default_value(signal: &Self::Signal) -> bool {
+        signal.value.with(|value| value.is_empty())
+    }
     fn is_initial_value(signal: &Self::Signal) -> bool {
         signal.initial.with(|initial| {
             signal.value.with(|value| match initial.as_ref() {
