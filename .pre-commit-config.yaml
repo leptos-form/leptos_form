@@ -77,6 +77,9 @@ repos:
         - --fix
         - --allow-dirty
         - --allow-staged
+        - --
+        - -D
+        - warnings
         language: system
         types: [file]
         files: (\.rs|Cargo\.toml)$
