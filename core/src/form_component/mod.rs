@@ -35,7 +35,6 @@ pub trait FormField<El>: Sized {
 
     fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal;
     fn is_default_value(signal: &Self::Signal) -> bool;
-    fn is_initial_value(signal: &Self::Signal) -> bool;
     fn into_signal(self, config: &Self::Config, initial: Option<Self>) -> Self::Signal;
     fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError>;
     fn recurse(signal: &Self::Signal);
@@ -92,7 +91,7 @@ pub struct FormFieldSignal<T: 'static> {
     pub error: RwSignal<Option<FormError>>,
 }
 
-impl<T: PartialEq + 'static + std::fmt::Debug, Config> RenderProps<FormFieldSignal<T>, Config> {
+impl<T: Default + PartialEq + 'static, Config> RenderProps<FormFieldSignal<T>, Config> {
     pub fn class_signal(&self) -> RwSignal<Option<Oco<'static, str>>> {
         let signal = self.signal;
         let class = self.class.clone();
@@ -130,12 +129,12 @@ impl<T: PartialEq + 'static + std::fmt::Debug, Config> RenderProps<FormFieldSign
     }
 }
 
-impl<T: PartialEq + 'static + std::fmt::Debug> FormFieldSignal<T> {
+impl<T: Default + PartialEq + 'static> FormFieldSignal<T> {
     pub fn has_changed(&self) -> bool {
         self.value.with(|value| {
             self.initial.with(|initial| match initial {
                 Some(initial) => *initial != *value,
-                None => true,
+                None => value != &T::default(),
             })
         })
     }
@@ -157,9 +156,6 @@ where
     }
     fn is_default_value(signal: &Self::Signal) -> bool {
         T::is_default_value(signal)
-    }
-    fn is_initial_value(signal: &Self::Signal) -> bool {
-        T::is_initial_value(signal)
     }
     fn into_signal(self, config: &Self::Config, initial: Option<Self>) -> Self::Signal {
         match self {
@@ -208,7 +204,7 @@ impl<T: Clone + Default + 'static> Default for FormFieldSignal<T> {
     }
 }
 
-impl<T: std::fmt::Debug + 'static> FormFieldSignal<T> {
+impl<T: 'static> FormFieldSignal<T> {
     fn new(value: T, initial: Option<T>) -> Self {
         Self {
             value: create_rw_signal(value),

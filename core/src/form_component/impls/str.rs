@@ -25,14 +25,6 @@ macro_rules! str_impl {
             fn is_default_value(signal: &Self::Signal) -> bool {
                 signal.value.with(|value| value.is_empty())
             }
-            fn is_initial_value(signal: &Self::Signal) -> bool {
-                signal.value.with(|value| signal.initial.with(|initial| {
-                    match initial {
-                        Some(initial) => initial == value,
-                        None => value.is_empty(),
-                    }
-                }))
-            }
             fn into_signal(self, _: &Self::Config, initial: Option<Self>) -> Self::Signal {
                 FormFieldSignal::new(self.to_string(), initial.map(|x| x.to_string()))
             }
