@@ -753,7 +753,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
                             let cache = cache.clone();
                             let cache_key = #key;
-                            #leptos_krate::create_local_resource(write_signal, move |_| {
+                            #leptos_krate::create_local_resource(move || write_signal.get(), move |_| {
                                 let cache = cache.clone();
                                 let cache_key = cache_key.clone();
                                 async move {
