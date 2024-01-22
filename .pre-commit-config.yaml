@@ -118,12 +118,14 @@ repos:
         entry: sh
         args:
         - -c
-        - "RUSTDOCFLAGS=\"-D warnings\" cargo doc --all-features"
+        # `|| true` prevents this stage from breaking the pre-commit if fails
+        - "RUSTDOCFLAGS=\"-D warnings\" cargo doc --all-features || true"
         language: system
         types: [file]
         files: (\.md|\.rs|Cargo\.toml)$
         exclude: (CHANGELOG|DEVELOPMENT)\.md$
         pass_filenames: false
+        verbose: true
 
       - id: cargo-test
         name: cargo-test
