@@ -129,15 +129,10 @@ repos:
         name: cargo-test
         description: run all tests
         stages: [push]
-        entry: sh
+        entry: cargo
         args:
-        - -c
-        - |
-          CARGO_INCREMENTAL="0" \
-          RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests" \
-          RUSTDOCFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests" \
-          cargo test \
-          --all-features
+        - test
+        - --all-features
         language: system
         types: [file]
         files: (\.md|\.rs|Cargo\.toml)$
