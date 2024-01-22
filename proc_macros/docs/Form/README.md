@@ -63,12 +63,16 @@ An action can be specified one of two ways:
 - a path to a server function specified in a particular way:
     ```rust
     mod my_mod {
-        #[derive(Clone, Debug, leptos_form::Form, serde::Deserialize, serde::Serialize)]
+        use leptos::{server, ServerFnError};
+        use leptos_form::Form;
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Clone, Debug, Deserialize, Form, Serialize)]
         #[form(component(action = my_server_fn(my_data)))]
         struct MyForm {}
 
-        #[leptos::server]
-        async fn my_server_fn(my_data: MyForm) -> Result<(), leptos::ServerFnError> {
+        #[server]
+        async fn my_server_fn(my_data: MyForm) -> Result<(), ServerFnError> {
             Ok(())
         }
     }
