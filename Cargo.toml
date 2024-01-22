@@ -4,7 +4,7 @@ resolver = "2"
 
 [workspace.package]
 # update the internal crate versions when updating this workspace version
-version = "0.1.8"
+version = "0.2.0-alpha"
 edition = "2021"
 rust-version = "1.75.0"
 authors = ["Trey Lowerison <19714082+tlowerison@users.noreply.github.com>"]
@@ -15,9 +15,9 @@ keywords = ["leptos", "form", "derive-macros", "ui"]
 
 [workspace.dependencies]
 # internal to this workspace
-leptos_form_core = { version = "=0.1.8", path = "core" }
-leptos_form_proc_macros = { version = "=0.1.8", path = "proc_macros" }
-leptos_form_proc_macros_core = { version = "=0.1.8", path = "proc_macros/core" }
+leptos_form_core = { version = "=0.2.0-alpha", path = "core" }
+leptos_form_proc_macros = { version = "=0.2.0-alpha", path = "proc_macros" }
+leptos_form_proc_macros_core = { version = "=0.2.0-alpha", path = "proc_macros/core" }
 
 bigdecimal = "~0.4"
 chrono = { version = "0", features = ["std"] }
