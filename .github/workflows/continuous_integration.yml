@@ -42,17 +42,17 @@ jobs:
 
     - run: pre-commit run --all-files --hook-stage push
 
-    - name: rust-grcov
-      uses: actions-rs/grcov@v0.1
+    # - name: rust-grcov
+    #   uses: actions-rs/grcov@v0.1
 
-    - name: Codecov
-      uses: codecov/codecov-action@v4-beta
-      continue-on-error: true
-      env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-      with:
-        # Repository upload token - get it from codecov.io. Required only for private repositories
-        # token: # optional
-        # Specify whether the Codecov output should be verbose
-        verbose: true
-        fail_ci_if_error: false
+    # - name: Codecov
+    #   uses: codecov/codecov-action@v4-beta
+    #   continue-on-error: true
+    #   env:
+    #     CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+    #   with:
+    #     # Repository upload token - get it from codecov.io. Required only for private repositories
+    #     # token: # optional
+    #     # Specify whether the Codecov output should be verbose
+    #     verbose: true
+    #     fail_ci_if_error: false
