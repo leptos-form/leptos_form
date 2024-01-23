@@ -10,15 +10,14 @@ jobs:
     name: Release-plz
     runs-on: ubuntu-latest
     steps:
-    # TODO: change to dtolnay/rust-toolchain@stable once 1.75.0 lands on stable
     - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: nightly-2023-11-01
 
     - uses: Swatinem/rust-cache@v2
       with:
-        prefix-key: "v3-rust"
+        prefix-key: "v4-rust"
         save-if: ${{ github.ref == 'refs/heads/main' }}
 
     - name: Checkout repository
