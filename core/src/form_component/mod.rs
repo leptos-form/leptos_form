@@ -34,7 +34,7 @@ pub trait FormField<El>: Sized {
     type Signal: Clone + 'static;
 
     fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal;
-    fn is_initial_value(signal: &Self::Signal) -> bool;
+    fn is_default_value(signal: &Self::Signal) -> bool;
     fn into_signal(self, config: &Self::Config, initial: Option<Self>) -> Self::Signal;
     fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError>;
     fn recurse(signal: &Self::Signal);
@@ -74,6 +74,8 @@ pub struct RenderProps<T: 'static, Config = ()> {
     pub style: Option<Oco<'static, str>>,
     #[builder(default)]
     pub field_changed_class: Option<Oco<'static, str>>,
+    #[builder(default)]
+    pub is_optional: bool,
     pub signal: T,
     pub config: Config,
 }
@@ -89,7 +91,7 @@ pub struct FormFieldSignal<T: 'static> {
     pub error: RwSignal<Option<FormError>>,
 }
 
-impl<T: PartialEq + 'static + std::fmt::Debug, Config> RenderProps<FormFieldSignal<T>, Config> {
+impl<T: Default + PartialEq + 'static, Config> RenderProps<FormFieldSignal<T>, Config> {
     pub fn class_signal(&self) -> RwSignal<Option<Oco<'static, str>>> {
         let signal = self.signal;
         let class = self.class.clone();
@@ -127,12 +129,12 @@ impl<T: PartialEq + 'static + std::fmt::Debug, Config> RenderProps<FormFieldSign
     }
 }
 
-impl<T: PartialEq + 'static + std::fmt::Debug> FormFieldSignal<T> {
+impl<T: Default + PartialEq + 'static> FormFieldSignal<T> {
     pub fn has_changed(&self) -> bool {
         self.value.with(|value| {
             self.initial.with(|initial| match initial {
                 Some(initial) => *initial != *value,
-                None => true,
+                None => value != &T::default(),
             })
         })
     }
@@ -152,8 +154,8 @@ where
     fn default_signal(config: &Self::Config, initial: Option<Self>) -> Self::Signal {
         T::default_signal(config, initial.flatten())
     }
-    fn is_initial_value(signal: &Self::Signal) -> bool {
-        T::is_initial_value(signal)
+    fn is_default_value(signal: &Self::Signal) -> bool {
+        T::is_default_value(signal)
     }
     fn into_signal(self, config: &Self::Config, initial: Option<Self>) -> Self::Signal {
         match self {
@@ -162,7 +164,7 @@ where
         }
     }
     fn try_from_signal(signal: Self::Signal, config: &Self::Config) -> Result<Self, FormError> {
-        match Self::is_initial_value(&signal) {
+        match Self::is_default_value(&signal) {
             true => Ok(None),
             false => Ok(Some(T::try_from_signal(signal, config)?)),
         }
@@ -185,7 +187,8 @@ impl<El, T> FormComponent<El> for Option<T>
 where
     T: FormComponent<El>,
 {
-    fn render(props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
+    fn render(mut props: RenderProps<Self::Signal, Self::Config>) -> impl IntoView {
+        props.is_optional = true;
         T::render(props)
     }
 }
@@ -201,7 +204,7 @@ impl<T: Clone + Default + 'static> Default for FormFieldSignal<T> {
     }
 }
 
-impl<T: std::fmt::Debug + 'static> FormFieldSignal<T> {
+impl<T: 'static> FormFieldSignal<T> {
     fn new(value: T, initial: Option<T>) -> Self {
         Self {
             value: create_rw_signal(value),

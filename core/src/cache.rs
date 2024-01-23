@@ -56,7 +56,7 @@ impl SerdeSerializer for SerdeJson {
 }
 
 #[cfg(feature = "cache-local-storage")]
-impl<CS: CacheSerializer<T, Serialized = String>, T> Cache<CS, T> for LocalStorage<CS> {
+impl<T, CS: CacheSerializer<T, Serialized = String>> Cache<CS, T> for LocalStorage<CS> {
     type Error = CS::Error;
     fn get_item(&self, key: &str) -> impl Future<Output = Result<Option<T>, CS::Error>> + Send {
         use wasm_bindgen::UnwrapThrowExt;

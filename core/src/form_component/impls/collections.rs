@@ -155,20 +155,8 @@ where
                 .collect::<IndexMap<_, _>>()
         }))
     }
-    fn is_initial_value(signal: &Self::Signal) -> bool {
-        signal.initial.with(|initial| {
-            signal.value.with(|value| match initial.as_ref() {
-                Some(initial) => {
-                    let no_keys_changed = value.len() == initial.len()
-                        && value.last().map(|item| item.0) == initial.last().map(|item| item.0);
-                    if !no_keys_changed {
-                        return false;
-                    }
-                    value.iter().all(|(_, item)| T::is_initial_value(&item.signal))
-                }
-                None => value.is_empty(),
-            })
-        })
+    fn is_default_value(signal: &Self::Signal) -> bool {
+        signal.value.with(|value| value.is_empty())
     }
     fn into_signal(self, config: &Self::Config, initial: Option<Self>) -> Self::Signal {
         let has_initial = initial.is_some();

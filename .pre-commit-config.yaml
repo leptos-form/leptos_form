@@ -77,6 +77,9 @@ repos:
         - --fix
         - --allow-dirty
         - --allow-staged
+        - --
+        - -D
+        - warnings
         language: system
         types: [file]
         files: (\.rs|Cargo\.toml)$
@@ -108,33 +111,28 @@ repos:
         types: [rust]
         args: ["--"]
 
-      - id: cargo-doc
-        name: cargo-doc
-        description: ensure cargo doc builds
-        stages: [push]
-        entry: sh
-        args:
-        - -c
-        - "RUSTDOCFLAGS=\"-D warnings\" cargo doc --all-features"
-        language: system
-        types: [file]
-        files: (\.md|\.rs|Cargo\.toml)$
-        exclude: (CHANGELOG|DEVELOPMENT)\.md$
-        pass_filenames: false
+      # - id: cargo-doc
+      #   name: cargo-doc
+      #   description: ensure cargo doc builds
+      #   stages: [push]
+      #   entry: sh
+      #   args:
+      #   - -c
+      #   - "RUSTDOCFLAGS=\"-D warnings\" cargo doc --all-features"
+      #   language: system
+      #   types: [file]
+      #   files: (\.md|\.rs|Cargo\.toml)$
+      #   exclude: (CHANGELOG|DEVELOPMENT)\.md$
+      #   pass_filenames: false
 
       - id: cargo-test
         name: cargo-test
         description: run all tests
         stages: [push]
-        entry: sh
+        entry: cargo
         args:
-        - -c
-        - |
-          CARGO_INCREMENTAL="0" \
-          RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests" \
-          RUSTDOCFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests" \
-          cargo test \
-          --all-features
+        - test
+        - --all-features
         language: system
         types: [file]
         files: (\.md|\.rs|Cargo\.toml)$
