@@ -30,7 +30,7 @@ inner = "0"
 itertools = "~0.12"
 js-sys = "~0.3"
 leptos = "=0.6.0-beta"
-leptos_router = "=0.6.0-beta"
+leptos_router = "=0.6.0-rc1"
 num-bigint = { version = "~0.4", default-features = false }
 paste = "~1"
 prettyplease = "0.2"
