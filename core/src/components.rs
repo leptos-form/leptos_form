@@ -16,14 +16,20 @@ pub trait OnSuccess<E: 'static, I: 'static, T: Clone + 'static, IV: IntoView + '
 
 pub trait OnLoading<IV: IntoView + 'static>: Fn() -> IV + 'static {}
 
-pub trait OnSubmit<T, Fut: Future + 'static>: Fn(T, ev::SubmitEvent) -> Fut + 'static {}
+pub trait OnSubmit<T: Clone, U: 'static, E: 'static, Fut: Future<Output = Result<U, E>> + 'static>:
+    Fn(T, ev::SubmitEvent) -> Fut + 'static
+{
+}
 
 impl<E: 'static, I: 'static, T: Clone + 'static, IV: IntoView + 'static, F> OnError<E, I, T, IV> for F where
     F: Fn(E, Action<I, Result<T, E>>) -> IV + 'static
 {
 }
 
-impl<T, Fut: Future + 'static, F> OnSubmit<T, Fut> for F where F: Fn(T, ev::SubmitEvent) -> Fut + 'static {}
+impl<T: Clone, U: 'static, E: 'static, Fut: Future<Output = Result<U, E>> + 'static, F> OnSubmit<T, U, E, Fut> for F where
+    F: Fn(T, ev::SubmitEvent) -> Fut + 'static
+{
+}
 
 impl<E: 'static, I: 'static, T: Clone + 'static, IV: IntoView + 'static, F> OnSuccess<E, I, T, IV> for F where
     F: Fn(T, Action<I, Result<T, E>>) -> IV + 'static
