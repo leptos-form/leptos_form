@@ -12,7 +12,7 @@ See an [extended example](#example) below.
 
 # Struct attributes
 
-| Attribute   | description                                                                                                                                      | Type                                       | Optional |
+| Attribute   | Description                                                                                                                                      | Type                                       | Optional |
 |-------------|--------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------|----------|
 | component   | Derive a component for this type using [`leptos::component`]                                                                                     | [component](#component-attributes)         | Y        |
 | error       | Specify error rendering behavior which will be used as a default for all fields; defaults to `default`                                           | [error handler](#error-handler-attributes) | Y        |
@@ -27,7 +27,7 @@ See an [extended example](#example) below.
 
 Any type which implements [`trait@FormField`] can be used as a field in a struct which derives Form.
 
-| Attribute | description                                                                                                                                      | Type                                       | Optional |
+| Attribute | Description                                                                                                                                      | Type                                       | Optional |
 |-----------|--------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------|----------|
 | class     | `class` property set on this field's wrapping element                                                                                            | string                                     | Y        |
 | config    | A Rust expression whose type is the [`FormField::Config`] type of this field's type                                                              | expr                                       | Y        |
@@ -39,9 +39,12 @@ Any type which implements [`trait@FormField`] can be used as a field in a struct
 | style     | `style` property set on this field's wrapping element                                                                                            | string                                     | Y        |
 
 ## Component attributes
-If specified, a leptos component can be produced for this type which will render a form derived from this type's fields.
+If specified, a leptos component will be produced for this type which will render a form derived from this type's fields.
+The below table documents which subparameters can be provided to the `component` parameter. These subparameters provide a way
+of controlling the actual UI behavior of the generated component. Note that essentially all of these behaviors (excluding things
+such as `class`, `style`, etc.) require client side wasm.
 
-| Attribute           | description                                                                                                                                                                                                                            | Type                                 | Optional |
+| Attribute           | Description                                                                                                                                                                                                                            | Type                                 | Optional |
 |---------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------|----------|
 | action              | Leptos action configuration for this form                                                                                                                                                                                              | [action](#action-attribute)          | Y        |
 | cache               | Cache configuration for this form                                                                                                                                                                                                      | [cache](#cache-attribute)            | Y        |
@@ -55,6 +58,15 @@ If specified, a leptos component can be produced for this type which will render
 | on_success          | A callback which is called after a successful form submission; called with the successful action outcome and the action signal                                                                                                         | [`OnSuccess`](components::OnSuccess) | Y        |
 | reset_on_success    | Configures whether the form's fields should be reset to the form's initial values upon successful submission; defaults to false                                                                                                        | bool                                 | Y        |
 | style               | `style` property set on the wrapping \<Form\> element                                                                                                                                                                                  | string                               | Y        |
+
+
+### Generated component props
+
+| Name    | Description                                                                                                                              | Type                         | Optional |
+|---------|------------------------------------------------------------------------------------------------------------------------------------------|------------------------------|----------|
+| initial | The initial value of `Self` to be used for the form -- typically is a default value.                                                     | `Self`                       | N        |
+| top     | Additional DOM node to be rendered inside of the `<form>` element prior to any labels/fields generated using the deriving type's fields. | `impl Fn() -> impl IntoView` | Y        |
+| bottom  | Additional DOM node to be rendered inside of the `<form>` element below any labels/fields generated using the deriving type's fields.    | `impl Fn() -> impl IntoView` | Y        |
 
 ## Action attribute
 If specified, an action will be attached to the rendered [`Form`](leptos_router::Form) component.
@@ -98,7 +110,7 @@ Forms can be configured to cache their serialized values, debouncing after any c
 ## Container attributes
 Specifies a containing element to contain wrap children.
 
-| Attribute | description                                       | Optional                                                                                               |
+| Attribute | Description                                       | Optional                                                                                               |
 |-----------|---------------------------------------------------|--------------------------------------------------------------------------------------------------------|
 | tag       | The html tag to use for the wrapping html element | N (Y if used in the context of an adjacent field label and the form also has a default adjacent label) |
 | id        | `id` property set on the wrapping html element    | Y                                                                                                      |
@@ -111,7 +123,7 @@ If there is an error while parsing the input, it can be displayed around the inp
 This attribute configures how that error is displayed.
 Only one of the below attributes can be used at a time.
 
-| Attribute | description                                                                     | Type                               |
+| Attribute | Description                                                                     | Type                               |
 |-----------|---------------------------------------------------------------------------------|------------------------------------|
 | component | A leptos component which takes a single prop `error` with type [`FormError`]    | ident                              |
 | container | A containing element which will render the stringified error as a child element | [container](#container-attributes) |
@@ -123,7 +135,7 @@ Only one of the below attributes can be used at a time.
 Configuration for how to render a field's label.
 Only one of the below attributes can be used at a time.
 
-| Attribute | description                                                                                                                | Type                                         |
+| Attribute | Description                                                                                                                | Type                                         |
 |-----------|----------------------------------------------------------------------------------------------------------------------------|----------------------------------------------|
 | adjacent  | Renders the field label adjacent to the field input within a containing element (adjacent in the sense of the DOM tree)    | [adjacent label](#adjacent-label-attributes) |
 | default   | Renders the field label adjacent to the field input without any containing element (adjacent in the sense of the DOM tree) | none                                         |
@@ -142,7 +154,7 @@ Rendered adjacent labels have the following html structure:
 </attr.container.tag>
 ```
 
-| Attribute  | description                                        | Type                               | Optional                            |
+| Attribute  | Description                                        | Type                               | Optional                            |
 | -----------|----------------------------------------------------|------------------------------------|-------------------------------------|
 | container  | A containing element which will wrap the \<label\> | [container](#container-attributes) | N if struct-level, Y if field-level |
 | id         | `id` property set on the wrapping html element     | string                             | Y                                   |
@@ -161,7 +173,7 @@ Rendered wrapped labels have the following html structure:
 </label>
 ```
 
-| Attribute  | description                                        | Type                      | Optional                            |
+| Attribute  | Description                                        | Type                      | Optional                            |
 | -----------|----------------------------------------------------|---------------------------|-------------------------------------|
 | id         | `id` property set on the wrapping html element     | string                    | Y                                   |
 | class      | `class` property set on the wrapping html element  | string                    | Y                                   |
