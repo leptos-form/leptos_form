@@ -381,9 +381,6 @@ impl<Config: Default> VecConfig<Config> {
         id: Oco<'static, str>,
         item: impl IntoView,
     ) -> impl IntoView {
-        // use leptos::ev::MouseEvent;
-        // use wasm_bindgen::{JsCast, UnwrapThrowExt};
-
         let (min_items, _) = size.split();
         let num_items_is_min = move || {
             let num_items = signal.with(|items| items.len());
@@ -396,7 +393,7 @@ impl<Config: Default> VecConfig<Config> {
         let on_remove = move |_| {
             if !num_items_is_min() {
                 signal.update(|items| {
-                    items.remove(&key);
+                    items.shift_remove(&key);
                 });
             }
         };

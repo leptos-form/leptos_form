@@ -1,26 +1,36 @@
 //! Common form components
 
 use leptos::*;
+use std::future::Future;
 use std::rc::Rc;
 
-pub trait OnError<I: 'static, T: Clone + 'static, IV: IntoView + 'static>:
-    Fn(ServerFnError, Action<I, Result<T, ServerFnError>>) -> IV + 'static
+pub trait OnError<E: 'static, I: 'static, T: Clone + 'static, IV: IntoView + 'static>:
+    Fn(E, Action<I, Result<T, E>>) -> IV + 'static
 {
 }
 
-pub trait OnSuccess<I: 'static, T: Clone + 'static, IV: IntoView + 'static>:
-    Fn(T, Action<I, Result<T, ServerFnError>>) -> IV + 'static
+pub trait OnSuccess<E: 'static, I: 'static, T: Clone + 'static, IV: IntoView + 'static>:
+    Fn(T, Action<I, Result<T, E>>) -> IV + 'static
 {
 }
 
-impl<I: 'static, T: Clone + 'static, IV: IntoView + 'static, F> OnError<I, T, IV> for F where
-    F: Fn(ServerFnError, Action<I, Result<T, ServerFnError>>) -> IV + 'static
+pub trait OnLoading<IV: IntoView + 'static>: Fn() -> IV + 'static {}
+
+pub trait OnSubmit<T, Fut: Future + 'static>: Fn(T, ev::SubmitEvent) -> Fut + 'static {}
+
+impl<E: 'static, I: 'static, T: Clone + 'static, IV: IntoView + 'static, F> OnError<E, I, T, IV> for F where
+    F: Fn(E, Action<I, Result<T, E>>) -> IV + 'static
 {
 }
-impl<I: 'static, T: Clone + 'static, IV: IntoView + 'static, F> OnSuccess<I, T, IV> for F where
-    F: Fn(T, Action<I, Result<T, ServerFnError>>) -> IV + 'static
+
+impl<T, Fut: Future + 'static, F> OnSubmit<T, Fut> for F where F: Fn(T, ev::SubmitEvent) -> Fut + 'static {}
+
+impl<E: 'static, I: 'static, T: Clone + 'static, IV: IntoView + 'static, F> OnSuccess<E, I, T, IV> for F where
+    F: Fn(T, Action<I, Result<T, E>>) -> IV + 'static
 {
 }
+
+impl<IV: IntoView + 'static, F> OnLoading<IV> for F where F: Fn() -> IV + 'static {}
 
 pub struct LeptosFormChildren(pub Rc<dyn Fn() -> View + 'static>);
 
@@ -31,35 +41,41 @@ impl<T: IntoView, F: Fn() -> T + 'static> From<F> for LeptosFormChildren {
 }
 
 #[component]
-pub fn FormSubmissionHandler<IV1: IntoView + 'static, IV2: IntoView + 'static, I: 'static, T: Clone + 'static>(
-    action: Action<I, Result<T, ServerFnError>>,
-    #[prop(optional)] on_error: Option<Rc<dyn OnError<I, T, IV2>>>,
-    #[prop(optional)] on_success: Option<Rc<dyn OnSuccess<I, T, IV1>>>,
+pub fn FormSubmissionHandler<
+    E: Clone + 'static,
+    IV1: IntoView + 'static,
+    IV2: IntoView + 'static,
+    IV3: IntoView + 'static,
+    I: 'static,
+    T: Clone + 'static,
+>(
+    action: Action<I, Result<T, E>>,
+    #[prop(optional)] on_error: Option<Rc<dyn OnError<E, I, T, IV1>>>,
+    #[prop(optional)] on_loading: Option<Rc<dyn OnLoading<IV2>>>,
+    #[prop(optional)] on_success: Option<Rc<dyn OnSuccess<E, I, T, IV3>>>,
     #[allow(unused_variables)]
     #[prop(optional)]
-    error_view_ty: Option<std::marker::PhantomData<IV2>>,
+    error_view_ty: Option<std::marker::PhantomData<IV1>>,
     #[allow(unused_variables)]
     #[prop(optional)]
-    success_view_ty: Option<std::marker::PhantomData<IV1>>,
+    loading_view_ty: Option<std::marker::PhantomData<IV2>>,
+    #[allow(unused_variables)]
+    #[prop(optional)]
+    success_view_ty: Option<std::marker::PhantomData<IV3>>,
 ) -> impl IntoView {
     view! {{move || match action.pending().get() {
-        true => view! { <div>"Loading..."</div> }.into_view(),
+        true => match &on_loading {
+            Some(on_loading) => on_loading().into_view(),
+            None => view! { <div>"Loading..."</div> }.into_view(),
+        },
         false => match action.value().get() {
-            Some(Ok(ok)) => match on_success.clone() {
+            Some(Ok(ok)) => match &on_success {
                 Some(on_success) => on_success(ok, action).into_view(),
                 None => View::default(),
             },
-            Some(Err(err)) => match on_error.clone() {
+            Some(Err(err)) => match &on_error {
                 Some(on_error) => on_error(err, action).into_view(),
-                None => view! {
-                    <div>
-                    {move || match err.clone() {
-                        ServerFnError::Request(err) => err,
-                        ServerFnError::ServerError(err) => err,
-                        _ => "Internal Error".to_string(),
-                    }}
-                    </div>
-                }.into_view(),
+                None => view! { <div>"Error"</div> }.into_view(),
             },
             None => View::default(),
         }

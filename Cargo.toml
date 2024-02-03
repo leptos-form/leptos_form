@@ -4,7 +4,7 @@ resolver = "2"
 
 [workspace.package]
 # update the internal crate versions when updating this workspace version
-version = "0.2.0-beta-2"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.75.0"
 authors = ["Trey Lowerison <19714082+tlowerison@users.noreply.github.com>"]
@@ -15,37 +15,37 @@ keywords = ["leptos", "form", "derive-macros", "ui"]
 
 [workspace.dependencies]
 # internal to this workspace
-leptos_form_core = { version = "=0.2.0-beta-2", path = "core" }
-leptos_form_proc_macros = { version = "=0.2.0-beta-2", path = "proc_macros" }
-leptos_form_proc_macros_core = { version = "=0.2.0-beta-2", path = "proc_macros/core" }
+leptos_form_core = { version = "0.2.0", path = "core" }
+leptos_form_proc_macros = { version = "0.2.0", path = "proc_macros" }
+leptos_form_proc_macros_core = { version = "0.2.0", path = "proc_macros/core" }
 
-bigdecimal = "~0.4"
-chrono = { version = "0", features = ["std"] }
-convert_case = "~0.6"
+bigdecimal = "0.4"
+chrono = { version = "0.4", features = ["std"] }
+convert_case = "0.6"
 darling = "0.20"
-derive_more = "~0.99"
-derivative = "2"
-indexmap = "2"
-inner = "0"
-itertools = "~0.12"
-js-sys = "~0.3"
-leptos = "=0.6.0-beta"
-leptos_router = "=0.6.0-beta"
-num-bigint = { version = "~0.4", default-features = false }
-paste = "~1"
+derive_more = "0.99"
+derivative = "2.2"
+indexmap = "2.2"
+inner = "0.1"
+itertools = "0.12"
+js-sys = "0.3"
+leptos = "0.6.5"
+leptos_router = "0.6.5"
+num-bigint = { version = "0.4", default-features = false }
+paste = "1.0"
 prettyplease = "0.2"
-pretty_assertions = "1.4.0"
-proc-macro2 = "1"
-quote = "1"
-serde = { version = "1", features = ["derive" ]}
-serde_json = "1"
-syn = { version = "2", features = ["extra-traits", "full", "parsing"] }
-tracing = "0"
-thiserror = "1"
-typed-builder = "~0.18"
-uuid = { version = "1", features = ["serde"] }
-wasm-bindgen = "~0.2"
-web-sys = "~0.3"
+pretty_assertions = "1.4"
+proc-macro2 = "1.0"
+quote = "1.0"
+serde = { version = "1.0", features = ["derive" ]}
+serde_json = "1.0"
+syn = { version = "2.0", features = ["extra-traits", "full", "parsing"] }
+tracing = "0.1"
+thiserror = "1.0"
+typed-builder = "0.18"
+uuid = { version = "1.7", features = ["serde"] }
+wasm-bindgen = "0.2"
+web-sys = "0.3"
 
 # Config for 'cargo dist'
 [workspace.metadata.dist]
