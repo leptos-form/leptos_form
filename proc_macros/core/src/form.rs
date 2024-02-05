@@ -64,6 +64,8 @@ struct ComponentConfig {
     map_submit: Option<MapSubmit>,
     name: Option<syn::Ident>,
     on_error: Option<syn::Expr>,
+    on_loading: Option<syn::Expr>,
+    on_submit: Option<syn::Expr>,
     on_success: Option<syn::Expr>,
     reset_on_success: Option<bool>,
     style: Option<StringExpr>,
@@ -124,11 +126,7 @@ struct FieldLabelContainer {
 
 #[derive(Clone, Debug, IsVariant)]
 enum Action {
-    Path {
-        server_fn_path: syn::Path,
-        arg: syn::Ident,
-        url: Option<syn::LitStr>,
-    },
+    Path { server_fn_path: syn::Path, arg: syn::Ident },
     Url(syn::LitStr),
 }
 
@@ -487,6 +485,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                     false => None,
                 },
             };
+
             if fields.style == Style::Tuple {
                 if let Some(span) = get_component_name_invalid_span() {
                     return Err(Error::new(
@@ -499,6 +498,7 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                     ));
                 }
             }
+
             let ComponentConfig {
                 action,
                 cache,
@@ -507,6 +507,8 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                 map_submit,
                 name: component_name,
                 on_error,
+                on_loading,
+                on_submit,
                 on_success,
                 reset_on_success,
                 style: form_style,
@@ -519,7 +521,6 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             let field_changed_class = field_changed_class.iter();
 
             let data_ident = format_ident!("data");
-            let action_ident = format_ident!("action");
             let initial_ident = format_ident!("initial");
             let props_signal_ident = format_ident!("signal");
             let delete_from_cache_ident = cache.is_some().then_some(format_ident!("delete_from_cache"));
@@ -527,21 +528,32 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
             let props_id = form_id.as_ref().map(|id| quote!(#leptos_krate::Oco::Borrowed(#id))).unwrap_or_else(|| quote!(None));
 
-            let action = action.as_ref().ok_or_else(||Error::new(
-                Span::call_site(),
-                "component forms must specify an action attribute",
-            ))?;
+            if on_submit.is_some() {
+                if action.is_some() {
+                    return Err(Error::new(
+                        Span::call_site(),
+                        "component forms can only specify an action attribute or an on_submit attribute",
+                    ));
+                }
+                if map_submit.is_some() {
+                    return Err(Error::new(Span::call_site(), "component forms cannot specify on_submit and map_submit attributes: the on_submit function handles all submission behavior if specified"));
+                }
+            }
 
-            let map_submit = if action.is_path() {
+            let map_submit = if action.as_ref().map(|x| x.is_path()).unwrap_or_default() {
                 match map_submit {
-                    Some(MapSubmit::Defn(closure_defn)) => {
-                        quote!(
-                            let map_submit = #closure_defn;
-                            let #data_ident = map_submit(#leptos_form_krate::FormDiff { initial: #initial_ident.clone(), current: #data_ident });
-                        )
-                    },
+                    Some(MapSubmit::Defn(closure_defn)) => quote!(
+                        let map_submit = #closure_defn;
+                        let #data_ident = map_submit(#leptos_form_krate::FormDiff {
+                            initial: #initial_ident.clone(),
+                            current: #data_ident,
+                        });
+                    ),
                     Some(MapSubmit::Path(path)) => quote!(
-                        let #data_ident = #path(#leptos_form_krate::FormDiff { initial: #initial_ident.clone(), current: #data_ident });
+                        let #data_ident = #path(#leptos_form_krate::FormDiff {
+                            initial: #initial_ident.clone(),
+                            current: #data_ident,
+                        });
                     ),
                     None => quote!(),
                 }
@@ -552,23 +564,20 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
             let parse_from_signal = quote!(#props_signal_ident.with(|props| <#component_ty as #leptos_form_krate::FormField<#leptos_krate::View>>::try_from_signal(props.signal, &config)));
 
             let _delete_from_cache_ident = delete_from_cache_ident.iter();
-            let (tag_import, action_def, open_tag, close_tag, props_name) = match action {
-                Action::Path { server_fn_path, arg, url } => (
-                    quote!(use #leptos_router_krate::Form;),
-                    Some(quote!(
-                        fn server_fn_inference<T: Clone, U>(f: impl Fn(T) -> U) -> impl Fn(&T) -> U {
-                            move |data: &T| f(data.clone())
-                        }
-                        let #action_ident = #leptos_krate::create_action(server_fn_inference(#server_fn_path));
-                    )),
-                    {
-                        let url = url.as_ref().map(|url| Ok(quote!(#url))).unwrap_or_else(|| {
-                            let server_fn_ident = &server_fn_path.segments.last().ok_or_else(|| Error::new_spanned(server_fn_path, "no function name found"))?.ident;
-                            let url = format!("/api/{server_fn_ident}");
-                            Ok::<_, Error>(quote!(#url))
-                        })?;
 
-                        quote!(<Form action=#url #(attr:id=#id)* #(attr:class=#class)* #(attr:style=#style)* on:submit=move |ev| {
+            let (action_ident, tag_import, action_def, open_tag, close_tag, props_name) = match (on_submit.as_ref(), action) {
+                (None, Some(Action::Path { server_fn_path, arg, .. })) => {
+                    let action_ident = format_ident!("action");
+                    (
+                        Some(action_ident.clone()),
+                        quote!(use #leptos_router_krate::Form;),
+                        Some(quote!(
+                            fn server_fn_inference<T: Clone, U>(f: impl Fn(T) -> U) -> impl Fn(&T) -> U {
+                                move |data: &T| f(data.clone())
+                            }
+                            let #action_ident = #leptos_krate::create_action(server_fn_inference(#server_fn_path));
+                        )),
+                        quote!(<Form action="/" #(attr:id=#id)* #(attr:class=#class)* #(attr:style=#style)* on:submit=move |ev| {
                             ev.prevent_default();
                             let #data_ident = match #parse_from_signal {
                                 Ok(parsed) => parsed,
@@ -580,21 +589,77 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
                             #map_submit
 
-                            action.dispatch(#data_ident);
+                            #action_ident.dispatch(#data_ident);
                             #(#_delete_from_cache_ident())*
-                        }>)
-                    },
-                    quote!(</Form>),
-                    { let arg = format!("{arg}"); quote!(#leptos_krate::Oco::Borrowed(#arg)) },
-                ),
-                Action::Url(url) => (
+                        }>),
+                        quote!(</Form>),
+                        { let arg = format!("{arg}"); quote!(#leptos_krate::Oco::Borrowed(#arg)) },
+                    )
+                },
+                (None, Some(Action::Url(url))) => (
+                    None,
                     quote!(use #leptos_router_krate::Form;),
                     None,
                     quote!(<Form action=#url #(attr:id=#id)* #(attr:class=#class)* #(attr:style=#style)*>),
                     quote!(</Form>),
-                    quote!(""),
+                    quote!(#leptos_krate::Oco::Borrowed("")),
                 ),
+                (Some(on_submit), None) => {
+                    let action_ident = format_ident!("action");
+                    let on_submit_ident = format_ident!("on_submit");
+                    let event_ident = format_ident!("ev");
+                    (
+                        Some(action_ident.clone()),
+                        quote!(use #leptos_krate::html::form;),
+                        Some(quote!(
+                            fn on_submit_fn_inference<T, U>(f: impl Fn(T, #leptos_krate::ev::SubmitEvent) -> U) -> impl Fn(T, #leptos_krate::ev::SubmitEvent) -> U {
+                                f
+                            }
+                            let #on_submit_ident = on_submit_fn_inference(#on_submit);
+                            let #action_ident = #leptos_krate::create_action(
+                                move |x: &(#component_ty, #leptos_krate::ev::SubmitEvent)| #on_submit_ident(x.0.clone(), x.1.clone())
+                            );
+                        )),
+                        quote!(<form
+                            #(id=#id)*
+                            #(class=#class)*
+                            #(style=#style)*
+                            on:submit=move |#event_ident| {
+                                let #data_ident = match #parse_from_signal {
+                                    Ok(parsed) => parsed,
+                                    Err(err) => {
+                                        #parse_error_handler_ident(err);
+                                        return;
+                                    },
+                                };
+
+                                #action_ident.dispatch((#data_ident, #event_ident));
+                                #(#_delete_from_cache_ident())*
+                            }
+                        >),
+                        quote!(</form>),
+                        quote!(#leptos_krate::Oco::Borrowed("")),
+                    )
+                },
+                (None, None) => (
+                    None,
+                    quote!(use #leptos_krate::html::form;),
+                    None,
+                    quote!(<form
+                        #(id=#id)*
+                        #(class=#class)*
+                        #(style=#style)*
+                        on:submit=move |ev| {
+                            ev.prevent_default();
+                            #(#_delete_from_cache_ident())*
+                        }
+                    >),
+                    quote!(</form>),
+                    quote!(#leptos_krate::Oco::Borrowed("")),
+                ),
+                _ => unreachable!(),
             };
+
             let action_def = action_def.into_iter();
 
             let props_builder = quote!(
@@ -609,8 +674,8 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
 
             let config_def = quote!(let config = #config_ty { #(#field_axs: #configs,)* };);
 
-            let optional_reset_on_success_effect = if action.is_path() {
-                    match reset_on_success.unwrap_or_default() {
+            let optional_reset_on_success_effect = if let Some(action_ident) = action_ident.as_ref() {
+                match reset_on_success.unwrap_or_default() {
                     true => quote!(
                         #leptos_krate::create_effect({
                             let initial = initial.clone();
@@ -654,25 +719,33 @@ pub fn derive_form(tokens: TokenStream) -> Result<TokenStream, Error> {
                         });
                     ),
                 }
+            } else if reset_on_success.is_some() {
+                return Err(Error::new(Span::call_site(), "reset_on_success can only be specified on forms which specify an action using a server function"));
             } else {
                 quote!()
             };
 
-            let form_submission_handler = if action.is_path() {
+            let form_submission_handler = if let Some(action_ident) = action_ident.as_ref() {
                 let error_view_ty = if on_error.is_some() { quote!() } else { quote!(error_view_ty={<::std::marker::PhantomData<#leptos_krate::View> as Default>::default()}) };
+                let loading_view_ty = if on_loading.is_some() { quote!() } else { quote!(loading_view_ty={<::std::marker::PhantomData<#leptos_krate::View> as Default>::default()}) };
                 let success_view_ty = if on_success.is_some() { quote!() } else { quote!(success_view_ty={<::std::marker::PhantomData<#leptos_krate::View> as Default>::default()}) };
 
                 let on_error = on_error.iter();
+                let on_loading = on_loading.iter();
                 let on_success = on_success.iter();
                 quote!(
                     <FormSubmissionHandler
                         action=#action_ident
-                        #(on_error=Rc::new(#on_error))*
-                        #(on_success=Rc::new(#on_success))*
+                        #(on_error=::std::rc::Rc::new(#on_error))*
+                        #(on_loading=::std::rc::Rc::new(#on_loading))*
+                        #(on_success=::std::rc::Rc::new(#on_success))*
                         #error_view_ty
+                        #loading_view_ty
                         #success_view_ty
                     />
                 )
+            } else if on_error.is_some() || on_loading.is_some() || on_success.is_some() {
+                return Err(Error::new(Span::call_site(), "on_error/on_loading/on_success can only be specified when an action using a sever function is specified"));
             } else {
                 quote!()
             };
@@ -1352,45 +1425,12 @@ impl FromMeta for Action {
         Ok(match expr {
             syn::Expr::Call(expr_call) => {
                 let (server_fn_path, arg) = parse_fn_call(expr_call)?;
-                Self::Path {
-                    server_fn_path,
-                    arg,
-                    url: None,
-                }
+                Self::Path { server_fn_path, arg }
             }
             syn::Expr::Lit(syn::ExprLit {
                 lit: syn::Lit::Str(lit_str),
                 ..
             }) => Self::Url(lit_str.clone()),
-            syn::Expr::Tuple(expr_tuple) => {
-                if expr_tuple.elems.len() != 2 {
-                    return Err(Error::custom(r#"ActionForm cannot be used without full specification like so: `action = (server_fn_path(data), "/api/url")`"#).with_span(&expr_tuple.elems.span()));
-                }
-                let first = expr_tuple.elems.first().unwrap();
-                let second = expr_tuple.elems.last().unwrap();
-
-                let (server_fn_path, arg) = if let syn::Expr::Call(expr_call) = first {
-                    parse_fn_call(expr_call)
-                } else {
-                    Err(Error::custom("expected a function call expression").with_span(&first.span()))
-                }?;
-
-                let url = if let syn::Expr::Lit(syn::ExprLit {
-                    lit: syn::Lit::Str(lit_str),
-                    ..
-                }) = second
-                {
-                    Ok(lit_str.clone())
-                } else {
-                    Err(Error::custom("expected an endpoint string literal").with_span(&first.span()))
-                }?;
-
-                Self::Path {
-                    server_fn_path,
-                    arg,
-                    url: Some(url),
-                }
-            }
             _ => {
                 return Err(Error::custom(
                     "action must be specified with an endpoint string literal or a server fn call expression",
@@ -1565,7 +1605,7 @@ mod test {
     }
 
     #[test]
-    fn component_attribute_must_provide_arguments() {
+    fn component_attribute_can_be_used_without_arguments() -> Result<(), Error> {
         let input = quote!(
             #[derive(Form)]
             #[form(component)]
@@ -1574,9 +1614,9 @@ mod test {
             }
         );
 
-        let err = expect_err(derive_form(input));
+        derive_form(input)?;
 
-        assert_eq!("component forms must specify an action attribute", format!("{err}"));
+        Ok(())
     }
 
     #[test]
@@ -1712,11 +1752,26 @@ mod test {
     }
 
     #[test]
-    fn action_server_fn_rejects_invalid_tuples() {
+    fn action_server_fn_accepts_api_string_literal() -> Result<(), Error> {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = "/api/test"))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        derive_form(input)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn action_server_fn_rejects_tuples() {
         // missing tuple elements should be rejected
         let input = quote!(
             #[derive(Form)]
-            #[form(component(action = ()))]
+            #[form(component(action = (server_fn_path(data),)))]
             pub struct MyFormData {
                 pub id: Uuid,
             }
@@ -1725,7 +1780,7 @@ mod test {
         let err = expect_err(derive_form(input));
 
         assert_eq!(
-            r#"ActionForm cannot be used without full specification like so: `action = (server_fn_path(data), "/api/url")`"#,
+            r#"action must be specified with an endpoint string literal or a server fn call expression"#,
             format!("{err}")
         );
 
@@ -1740,7 +1795,7 @@ mod test {
 
         let err = expect_err(derive_form(input));
         assert_eq!(
-            r#"ActionForm cannot be used without full specification like so: `action = (server_fn_path(data), "/api/url")`"#,
+            r#"action must be specified with an endpoint string literal or a server fn call expression"#,
             format!("{err}")
         );
 
@@ -1754,7 +1809,10 @@ mod test {
         );
 
         let err = expect_err(derive_form(input));
-        assert_eq!("expected a function call expression", format!("{err}"));
+        assert_eq!(
+            "action must be specified with an endpoint string literal or a server fn call expression",
+            format!("{err}")
+        );
 
         // enforce string literal parsing on second argument
         let input = quote!(
@@ -1766,22 +1824,10 @@ mod test {
         );
 
         let err = expect_err(derive_form(input));
-        assert_eq!("expected an endpoint string literal", format!("{err}"));
-    }
-
-    #[test]
-    fn action_server_fn_accepts_valid_tuple_of_expr_fn_call_and_endpoint_path() -> Result<(), Error> {
-        let input = quote!(
-            #[derive(Form)]
-            #[form(component(action = (my_action(my_form_data), "/api/test")))]
-            pub struct MyFormData {
-                pub id: Uuid,
-            }
+        assert_eq!(
+            "action must be specified with an endpoint string literal or a server fn call expression",
+            format!("{err}")
         );
-
-        derive_form(input)?;
-
-        Ok(())
     }
 
     #[test]
@@ -2520,10 +2566,28 @@ mod test {
     }
 
     #[test]
-    fn component_is_produced_correctly() -> Result<(), Error> {
+    fn component_reset_on_succcess_attribute_cannot_be_used_with_a_string_literal_action() {
         let input = quote!(
             #[derive(Form)]
             #[form(component(action = "/api/my-form-data", reset_on_success))]
+            pub struct MyFormData {
+                pub ayo: u8,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!(
+            "reset_on_success can only be specified on forms which specify an action using a server function",
+            format!("{err}")
+        );
+    }
+
+    #[test]
+    fn component_is_produced_correctly() -> Result<(), Error> {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = "/api/my-form-data"))]
             pub struct MyFormData {
                 pub ayo: u8,
             }
@@ -2687,7 +2751,7 @@ mod test {
 
                     let signal = #leptos_krate::create_rw_signal(#leptos_form_krate::RenderProps::builder()
                         .id(None)
-                        .name("")
+                        .name(::leptos_form::internal::leptos::Oco::Borrowed(""))
                         .signal(initial.clone().into_signal(&config, Some(initial.clone())))
                         .config(config.clone())
                         .build()
@@ -2965,7 +3029,7 @@ mod test {
                     let ty = <::std::marker::PhantomData<(MyFormData, #leptos_krate::View)> as Default>::default();
                     #leptos_krate::view! {
                         <Form
-                            action="/api/my_server_fn"
+                            action="/"
                             on:submit=move |ev| {
                                 ev.prevent_default();
                                 let data = match signal.with(|props| <MyFormData as #leptos_form_krate::FormField<#leptos_krate::View>>::try_from_signal(props.signal, &config)) {
@@ -2975,7 +3039,7 @@ mod test {
                                         return;
                                     },
                                 };
-                                let data = my_map_submit(#leptos_form_krate::FormDiff { initial: initial.clone(), current: data });
+                                let data = my_map_submit(#leptos_form_krate::FormDiff { initial: initial.clone(), current: data, });
                                 action.dispatch(data);
                             }
                         >
@@ -2985,6 +3049,7 @@ mod test {
                             <FormSubmissionHandler
                                 action=action
                                 error_view_ty={<::std::marker::PhantomData<#leptos_krate::View> as Default>::default()}
+                                loading_view_ty={<::std::marker::PhantomData<#leptos_krate::View> as Default>::default()}
                                 success_view_ty={<::std::marker::PhantomData<#leptos_krate::View> as Default>::default()}
                             />
                         </Form>
@@ -3184,7 +3249,7 @@ mod test {
                     let signal = #leptos_krate::create_rw_signal(
                         #leptos_form_krate::RenderProps::builder()
                             .id(None)
-                            .name("")
+                            .name(::leptos_form::internal::leptos::Oco::Borrowed(""))
                             .signal(initial.clone().into_signal(&config, Some(initial.clone())))
                             .config(config.clone())
                             .build(),
