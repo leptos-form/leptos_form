@@ -1431,20 +1431,6 @@ impl FromMeta for Action {
                 lit: syn::Lit::Str(lit_str),
                 ..
             }) => Self::Url(lit_str.clone()),
-            syn::Expr::Tuple(expr_tuple) => {
-                if expr_tuple.elems.len() != 2 {
-                    return Err(Error::custom(r#"ActionForm cannot be used without full specification like so: `action = (server_fn_path(data), "/api/url")`"#).with_span(&expr_tuple.elems.span()));
-                }
-                let first = expr_tuple.elems.first().unwrap();
-
-                let (server_fn_path, arg) = if let syn::Expr::Call(expr_call) = first {
-                    parse_fn_call(expr_call)
-                } else {
-                    Err(Error::custom("expected a function call expression").with_span(&first.span()))
-                }?;
-
-                Self::Path { server_fn_path, arg }
-            }
             _ => {
                 return Err(Error::custom(
                     "action must be specified with an endpoint string literal or a server fn call expression",
@@ -1619,7 +1605,7 @@ mod test {
     }
 
     #[test]
-    fn component_attribute_must_provide_arguments() {
+    fn component_attribute_can_be_used_without_arguments() -> Result<(), Error> {
         let input = quote!(
             #[derive(Form)]
             #[form(component)]
@@ -1628,9 +1614,9 @@ mod test {
             }
         );
 
-        let err = expect_err(derive_form(input));
+        derive_form(input)?;
 
-        assert_eq!("component forms must specify an action attribute", format!("{err}"));
+        Ok(())
     }
 
     #[test]
@@ -1766,11 +1752,26 @@ mod test {
     }
 
     #[test]
-    fn action_server_fn_rejects_invalid_tuples() {
+    fn action_server_fn_accepts_api_string_literal() -> Result<(), Error> {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = "/api/test"))]
+            pub struct MyFormData {
+                pub id: Uuid,
+            }
+        );
+
+        derive_form(input)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn action_server_fn_rejects_tuples() {
         // missing tuple elements should be rejected
         let input = quote!(
             #[derive(Form)]
-            #[form(component(action = ()))]
+            #[form(component(action = (server_fn_path(data),)))]
             pub struct MyFormData {
                 pub id: Uuid,
             }
@@ -1779,7 +1780,7 @@ mod test {
         let err = expect_err(derive_form(input));
 
         assert_eq!(
-            r#"ActionForm cannot be used without full specification like so: `action = (server_fn_path(data), "/api/url")`"#,
+            r#"action must be specified with an endpoint string literal or a server fn call expression"#,
             format!("{err}")
         );
 
@@ -1794,7 +1795,7 @@ mod test {
 
         let err = expect_err(derive_form(input));
         assert_eq!(
-            r#"ActionForm cannot be used without full specification like so: `action = (server_fn_path(data), "/api/url")`"#,
+            r#"action must be specified with an endpoint string literal or a server fn call expression"#,
             format!("{err}")
         );
 
@@ -1808,7 +1809,10 @@ mod test {
         );
 
         let err = expect_err(derive_form(input));
-        assert_eq!("expected a function call expression", format!("{err}"));
+        assert_eq!(
+            "action must be specified with an endpoint string literal or a server fn call expression",
+            format!("{err}")
+        );
 
         // enforce string literal parsing on second argument
         let input = quote!(
@@ -1820,22 +1824,10 @@ mod test {
         );
 
         let err = expect_err(derive_form(input));
-        assert_eq!("expected an endpoint string literal", format!("{err}"));
-    }
-
-    #[test]
-    fn action_server_fn_accepts_valid_tuple_of_expr_fn_call_and_endpoint_path() -> Result<(), Error> {
-        let input = quote!(
-            #[derive(Form)]
-            #[form(component(action = (my_action(my_form_data), "/api/test")))]
-            pub struct MyFormData {
-                pub id: Uuid,
-            }
+        assert_eq!(
+            "action must be specified with an endpoint string literal or a server fn call expression",
+            format!("{err}")
         );
-
-        derive_form(input)?;
-
-        Ok(())
     }
 
     #[test]
@@ -2574,10 +2566,28 @@ mod test {
     }
 
     #[test]
-    fn component_is_produced_correctly() -> Result<(), Error> {
+    fn component_reset_on_succcess_attribute_cannot_be_used_with_a_string_literal_action() {
         let input = quote!(
             #[derive(Form)]
             #[form(component(action = "/api/my-form-data", reset_on_success))]
+            pub struct MyFormData {
+                pub ayo: u8,
+            }
+        );
+
+        let err = expect_err(derive_form(input));
+
+        assert_eq!(
+            "reset_on_success can only be specified on forms which specify an action using a server function",
+            format!("{err}")
+        );
+    }
+
+    #[test]
+    fn component_is_produced_correctly() -> Result<(), Error> {
+        let input = quote!(
+            #[derive(Form)]
+            #[form(component(action = "/api/my-form-data"))]
             pub struct MyFormData {
                 pub ayo: u8,
             }
@@ -2741,7 +2751,7 @@ mod test {
 
                     let signal = #leptos_krate::create_rw_signal(#leptos_form_krate::RenderProps::builder()
                         .id(None)
-                        .name("")
+                        .name(::leptos_form::internal::leptos::Oco::Borrowed(""))
                         .signal(initial.clone().into_signal(&config, Some(initial.clone())))
                         .config(config.clone())
                         .build()
@@ -3019,7 +3029,7 @@ mod test {
                     let ty = <::std::marker::PhantomData<(MyFormData, #leptos_krate::View)> as Default>::default();
                     #leptos_krate::view! {
                         <Form
-                            action="/api/my_server_fn"
+                            action="/"
                             on:submit=move |ev| {
                                 ev.prevent_default();
                                 let data = match signal.with(|props| <MyFormData as #leptos_form_krate::FormField<#leptos_krate::View>>::try_from_signal(props.signal, &config)) {
@@ -3029,7 +3039,7 @@ mod test {
                                         return;
                                     },
                                 };
-                                let data = my_map_submit(#leptos_form_krate::FormDiff { initial: initial.clone(), current: data });
+                                let data = my_map_submit(#leptos_form_krate::FormDiff { initial: initial.clone(), current: data, });
                                 action.dispatch(data);
                             }
                         >
@@ -3039,6 +3049,7 @@ mod test {
                             <FormSubmissionHandler
                                 action=action
                                 error_view_ty={<::std::marker::PhantomData<#leptos_krate::View> as Default>::default()}
+                                loading_view_ty={<::std::marker::PhantomData<#leptos_krate::View> as Default>::default()}
                                 success_view_ty={<::std::marker::PhantomData<#leptos_krate::View> as Default>::default()}
                             />
                         </Form>
@@ -3238,7 +3249,7 @@ mod test {
                     let signal = #leptos_krate::create_rw_signal(
                         #leptos_form_krate::RenderProps::builder()
                             .id(None)
-                            .name("")
+                            .name(::leptos_form::internal::leptos::Oco::Borrowed(""))
                             .signal(initial.clone().into_signal(&config, Some(initial.clone())))
                             .config(config.clone())
                             .build(),
